@@ -821,7 +821,295 @@ else:
     except Exception as error:
         st.error("Reliability checks could not be completed.")
         st.caption(str(error))
-        
+
+
+# ============================================================
+# BUILD 05B - DOWNLOADABLE RESEARCH REPORTS
+# ============================================================
+
+from io import BytesIO
+from xml.sax.saxutils import escape
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle,
+)
+
+st.divider()
+st.header("📄 Downloadable Research Reports")
+
+report_eval_path = BASE_DIR / "evaluation_predictions.csv"
+report_metadata_path = BASE_DIR / "model_metadata.json"
+
+
+def create_afrihealth_pdf(metrics, metadata, record_count):
+    buffer = BytesIO()
+
+    document = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        rightMargin=18 * mm,
+        leftMargin=18 * mm,
+        topMargin=18 * mm,
+        bottomMargin=18 * mm,
+        title="AfriHealth AI Research Evaluation Report",
+        author="AfriHealth AI",
+    )
+
+    styles = getSampleStyleSheet()
+    styles.add(
+        ParagraphStyle(
+            name="ReportTitle",
+            parent=styles["Title"],
+            alignment=TA_CENTER,
+            textColor=colors.HexColor("#087f8c"),
+            spaceAfter=12,
+        )
+    )
+
+    story = [
+        Paragraph(
+            "AfriHealth AI",
+            styles["ReportTitle"],
+        ),
+        Paragraph(
+            "Model Evaluation and Reliability Report",
+            styles["Heading2"],
+        ),
+        Spacer(1, 8),
+        Paragraph(
+            "Purpose: research and education only. This report "
+            "does not establish clinical validity and is not intended "
+            "for diagnosis or treatment decisions.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 12),
+        Paragraph("Project Information", styles["Heading2"]),
+    ]
+
+    project_rows = [
+        ["Project", "AfriHealth AI"],
+        ["Model", str(metadata.get("selected_model", "Not specified"))],
+        ["Dataset", str(metadata.get(
+            "dataset", "UCI Heart Disease dataset"
+        ))],
+        ["Evaluation records", str(record_count)],
+        ["Evaluation basis", "Exported holdout predictions"],
+        ["Project version", str(metadata.get("version", "Not specified"))],
+        ["Intended use", str(metadata.get(
+            "intended_use",
+            "Research and educational screening-support prototype only."
+        ))],
+    ]
+
+    project_table = Table(
+        project_rows,
+        colWidths=[48 * mm, 112 * mm],
+        repeatRows=1,
+    )
+    project_table.setStyle(
+        TableStyle([
+            ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#e7f4f4")),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("PADDING", (0, 0), (-1, -1), 7),
+        ])
+    )
+
+    story.extend([
+        project_table,
+        Spacer(1, 14),
+        Paragraph("Holdout Evaluation Metrics", styles["Heading2"]),
+    ])
+
+    metric_rows = [["Metric", "Value"]]
+    metric_rows.extend(
+        [[name, f"{value:.4f}"] for name, value in metrics.items()]
+    )
+
+    metric_table = Table(
+        metric_rows,
+        colWidths=[80 * mm, 50 * mm],
+        repeatRows=1,
+    )
+    metric_table.setStyle(
+        TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#087f8c")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+            ("PADDING", (0, 0), (-1, -1), 7),
+        ])
+    )
+
+    story.extend([
+        metric_table,
+        Spacer(1, 14),
+        Paragraph("Interpretation and Limitations", styles["Heading2"]),
+        Paragraph(
+            "These metrics describe performance on the exported "
+            "holdout sample only. They do not establish performance "
+            "on independent data or in Nigerian or wider African "
+            "populations. Probability estimates have not been shown "
+            "to be clinically calibrated. A model output must not "
+            "be interpreted as a diagnosis or a treatment recommendation.",
+            styles["BodyText"],
+        ),
+        Spacer(1, 8),
+        Paragraph(
+            "Research integrity: report the dataset, split procedure, "
+            "model-selection method, and limitations when presenting "
+            "these findings. Do not claim external validation unless "
+            "it has actually been performed.",
+            styles["BodyText"],
+        ),
+    ])
+
+    def add_page_number(canvas, doc):
+        canvas.saveState()
+        canvas.setFont("Helvetica", 8)
+        canvas.drawString(
+            18 * mm, 10 * mm,
+            "AfriHealth AI | Research and education only",
+        )
+        canvas.drawRightString(
+            A4[0] - 18 * mm, 10 * mm,
+            f"Page {doc.page}",
+        )
+        canvas.restoreState()
+
+    document.build(
+        story,
+        onFirstPage=add_page_number,
+        onLaterPages=add_page_number,
+    )
+
+    buffer.seek(0)
+    return buffer.getvalue()
+
+
+if report_eval_path.exists():
+    try:
+        report_df = pd.read_csv(report_eval_path)
+        report_required = {"y_true", "y_pred", "prob_class_1"}
+
+        if not report_required.issubset(report_df.columns):
+            raise ValueError(
+                "Evaluation CSV is missing required columns."
+            )
+
+        report_actual = pd.to_numeric(
+            report_df["y_true"], errors="raise"
+        ).to_numpy(dtype=int)
+        report_predicted = pd.to_numeric(
+            report_df["y_pred"], errors="raise"
+        ).to_numpy(dtype=int)
+        report_probability = pd.to_numeric(
+            report_df["prob_class_1"], errors="raise"
+        ).to_numpy(dtype=float)
+
+        if len(report_actual) == 0:
+            raise ValueError("Evaluation CSV contains no records.")
+
+        if not (
+            len(report_actual)
+            == len(report_predicted)
+            == len(report_probability)
+        ):
+            raise ValueError("Evaluation columns have different lengths.")
+
+        if not np.isin(report_actual, [0, 1]).all():
+            raise ValueError("Actual labels must be 0 or 1.")
+
+        if not np.isin(report_predicted, [0, 1]).all():
+            raise ValueError("Predicted labels must be 0 or 1.")
+
+        if (
+            not np.isfinite(report_probability).all()
+            or ((report_probability < 0) | (report_probability > 1)).any()
+        ):
+            raise ValueError("Invalid probability values found.")
+
+        report_metrics = {
+            "Accuracy": accuracy_score(
+                report_actual, report_predicted
+            ),
+            "Precision": precision_score(
+                report_actual, report_predicted, zero_division=0
+            ),
+            "Recall / Sensitivity": recall_score(
+                report_actual, report_predicted, zero_division=0
+            ),
+            "F1 score": f1_score(
+                report_actual, report_predicted, zero_division=0
+            ),
+            "Balanced accuracy": balanced_accuracy_score(
+                report_actual, report_predicted
+            ),
+            "Brier score": brier_score_loss(
+                report_actual, report_probability
+            ),
+        }
+
+        if len(np.unique(report_actual)) == 2:
+            report_metrics["Holdout ROC-AUC"] = roc_auc_score(
+                report_actual, report_probability
+            )
+
+        if report_metadata_path.exists():
+            with open(report_metadata_path, "r", encoding="utf-8") as file:
+                report_metadata = json.load(file)
+        else:
+            report_metadata = {
+                "project": "AfriHealth AI",
+                "version": "Not specified",
+                "selected_model": "Logistic Regression",
+                "dataset": "UCI Heart Disease dataset, repository ID 45",
+                "intended_use": (
+                    "Research and educational screening-support prototype only; "
+                    "not for diagnosis or treatment decisions."
+                ),
+            }
+
+        pdf_bytes = create_afrihealth_pdf(
+            report_metrics,
+            report_metadata,
+            len(report_actual),
+        )
+
+        st.download_button(
+            label="Download PDF Research Report",
+            data=pdf_bytes,
+            file_name="AfriHealth_AI_Research_Report.pdf",
+            mime="application/pdf",
+        )
+
+        st.download_button(
+            label="Download Evaluation Predictions CSV",
+            data=report_df.to_csv(index=False).encode("utf-8"),
+            file_name="AfriHealth_AI_Evaluation_Predictions.csv",
+            mime="text/csv",
+        )
+
+        st.caption(
+            "The CSV contains evaluation labels and model predictions. "
+            "Review its contents before sharing it publicly."
+        )
+
+    except Exception as error:
+        st.error("The research report could not be generated.")
+        st.caption(str(error))
+else:
+    st.info(
+        "Upload evaluation_predictions.csv to enable report downloads."
+    )
+    
 # ============================================================
 # BUILD 04B - MODEL EXPLAINABILITY
 # ============================================================
