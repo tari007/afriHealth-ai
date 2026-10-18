@@ -20,6 +20,92 @@ st.set_page_config(
     layout="centered",
 )
 
+
+st.markdown("""
+<style>
+/* AfriHealth AI visual identity */
+.stApp {
+    background:
+        radial-gradient(
+            ellipse at 10% 0%,
+            rgba(22, 120, 139, 0.18),
+            transparent 42%
+        ),
+        #07111F;
+}
+
+.block-container {
+    max-width: 1180px;
+    padding-top: 2.2rem;
+    padding-bottom: 3rem;
+}
+
+h1 {
+    letter-spacing: -1.5px;
+    font-weight: 800 !important;
+}
+
+h2, h3 {
+    letter-spacing: -0.5px;
+}
+
+div[data-testid="stMetric"] {
+    background: linear-gradient(
+        135deg,
+        rgba(21, 43, 66, 0.96),
+        rgba(12, 28, 44, 0.96)
+    );
+    border: 1px solid rgba(53, 214, 194, 0.22);
+    padding: 18px;
+    border-radius: 18px;
+}
+
+div[data-testid="stForm"] {
+    background: rgba(16, 31, 51, 0.72);
+    border: 1px solid #243650;
+    padding: 22px;
+    border-radius: 20px;
+}
+
+.stButton > button,
+.stFormSubmitButton > button {
+    border-radius: 12px;
+    font-weight: 700;
+    min-height: 46px;
+    transition: all 0.2s ease;
+}
+
+.stButton > button:hover,
+.stFormSubmitButton > button:hover {
+    transform: translateY(-2px);
+    border-color: #35D6C2;
+}
+
+div[data-testid="stAlert"] {
+    border-radius: 14px;
+}
+
+div[data-testid="stExpander"] {
+    border: 1px solid #243650;
+    border-radius: 14px;
+}
+
+footer {
+    visibility: hidden;
+}
+
+@media (max-width: 640px) {
+    .block-container {
+        padding: 1rem 0.8rem 2rem;
+    }
+
+    h1 {
+        font-size: 2rem !important;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
+
 # Keep the original dataset's input feature names.
 DEFAULT_FEATURES = [
     "age", "sex", "cp", "trestbps", "chol", "fbs",
