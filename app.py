@@ -1,3 +1,4 @@
+
 import json
 from pathlib import Path
 
@@ -17,510 +18,158 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-
-# ============================================================
-# FILE PATHS
-# ============================================================
-
 BASE_DIR = Path(__file__).resolve().parent
-
 MODEL_PATH = BASE_DIR / "afrihealth_model.joblib"
 METADATA_PATH = BASE_DIR / "model_metadata.json"
 
-
-# ============================================================
-# FEATURE SCHEMA
-# ============================================================
-
 DEFAULT_FEATURES = [
-    "age",
-    "sex",
-    "cp",
-    "trestbps",
-    "chol",
-    "fbs",
-    "restecg",
-    "thalach",
-    "exang",
-    "oldpeak",
-    "slope",
-    "ca",
-    "thal",
+    "age", "sex", "cp", "trestbps", "chol", "fbs",
+    "restecg", "thalach", "exang", "oldpeak",
+    "slope", "ca", "thal",
 ]
 
 
 # ============================================================
-# CUSTOM CSS
-# ============================================================
-
-st.markdown(
-    """
-    <style>
-
-    /* Main application */
-    .stApp {
-        background:
-            radial-gradient(
-                circle at top right,
-                rgba(0, 180, 180, 0.10),
-                transparent 30%
-            ),
-            radial-gradient(
-                circle at top left,
-                rgba(0, 120, 180, 0.08),
-                transparent 28%
-            ),
-            #07111f;
-        color: #f5f7fa;
-    }
-
-    .block-container {
-        max-width: 1180px;
-        padding-top: 2rem;
-        padding-bottom: 3rem;
-    }
-
-    /* Hero */
-    .hero-box {
-        background: linear-gradient(
-            135deg,
-            rgba(10, 30, 50, 0.97),
-            rgba(8, 38, 50, 0.96)
-        );
-        border: 1px solid rgba(0, 220, 200, 0.22);
-        border-radius: 24px;
-        padding: 2.5rem;
-        margin-bottom: 1.5rem;
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
-    }
-
-    .hero-badge {
-        display: inline-block;
-        background: rgba(0, 220, 200, 0.10);
-        color: #5fffe9;
-        border: 1px solid rgba(0, 220, 200, 0.25);
-        border-radius: 999px;
-        padding: 0.35rem 0.8rem;
-        font-size: 0.8rem;
-        font-weight: 700;
-        margin-bottom: 1rem;
-    }
-
-    .hero-heading {
-        color: #ffffff;
-        font-size: 3rem;
-        font-weight: 800;
-        line-height: 1.1;
-        margin-bottom: 0.8rem;
-    }
-
-    .hero-description {
-        color: #b9c7d6;
-        font-size: 1.1rem;
-        line-height: 1.7;
-        max-width: 850px;
-    }
-
-    /* Section headings */
-    .section-heading {
-        color: #5fffe9;
-        font-size: 1.35rem;
-        font-weight: 750;
-        margin-top: 1.5rem;
-        margin-bottom: 0.8rem;
-    }
-
-    /* Metric cards */
-    .metric-card {
-        background: linear-gradient(
-            135deg,
-            rgba(13, 34, 52, 0.96),
-            rgba(10, 28, 44, 0.96)
-        );
-        border: 1px solid rgba(0, 220, 200, 0.15);
-        border-radius: 18px;
-        padding: 1.2rem;
-        min-height: 115px;
-    }
-
-    .metric-label {
-        color: #8fa5b8;
-        font-size: 0.82rem;
-        margin-bottom: 0.4rem;
-    }
-
-    .metric-number {
-        color: #5fffe9;
-        font-size: 1.5rem;
-        font-weight: 800;
-    }
-
-    /* Disclaimer */
-    .disclaimer-box {
-        background: rgba(255, 193, 7, 0.07);
-        border: 1px solid rgba(255, 193, 7, 0.22);
-        border-radius: 14px;
-        padding: 1rem 1.2rem;
-        color: #d7dce2;
-        font-size: 0.9rem;
-        line-height: 1.6;
-        margin-bottom: 1.5rem;
-    }
-
-    /* Result */
-    .result-box {
-        background: linear-gradient(
-            135deg,
-            rgba(0, 150, 130, 0.14),
-            rgba(10, 30, 50, 0.96)
-        );
-        border: 1px solid rgba(0, 220, 200, 0.25);
-        border-radius: 20px;
-        padding: 1.6rem;
-        margin-top: 1rem;
-    }
-
-    .result-label {
-        color: #5fffe9;
-        font-size: 0.95rem;
-        font-weight: 700;
-    }
-
-    .result-heading {
-        color: #ffffff;
-        font-size: 2rem;
-        font-weight: 800;
-        margin-top: 0.3rem;
-    }
-
-    .result-probability {
-        color: #b9c7d6;
-        font-size: 0.95rem;
-        margin-top: 0.6rem;
-    }
-
-    /* Footer */
-    .footer {
-        text-align: center;
-        color: #738596;
-        font-size: 0.82rem;
-        margin-top: 3rem;
-        padding-top: 1.5rem;
-        border-top: 1px solid rgba(255, 255, 255, 0.07);
-    }
-
-    /* Mobile */
-    @media (max-width: 768px) {
-
-        .block-container {
-            padding-left: 1rem;
-            padding-right: 1rem;
-            padding-top: 1rem;
-        }
-
-        .hero-box {
-            padding: 1.5rem;
-            border-radius: 18px;
-        }
-
-        .hero-heading {
-            font-size: 2rem;
-        }
-
-        .hero-description {
-            font-size: 1rem;
-        }
-
-        .metric-card {
-            min-height: auto;
-        }
-    }
-
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-# ============================================================
-# HERO
-# ============================================================
-
-st.markdown(
-    """
-    <div class="hero-box">
-        <div class="hero-badge">
-            AI + HEALTH RESEARCH PROTOTYPE
-        </div>
-
-        <div class="hero-heading">
-            🫀 AfriHealth AI
-        </div>
-
-        <div class="hero-description">
-            AI-powered health-risk intelligence for Africa.
-            A research and educational prototype for exploring
-            machine-learning-based cardiovascular risk classification.
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-# ============================================================
-# DISCLAIMER
-# ============================================================
-
-st.markdown(
-    """
-    <div class="disclaimer-box">
-        <strong>⚠️ Research and Educational Use Only</strong><br><br>
-        AfriHealth AI is a machine-learning research prototype.
-        It is <strong>not a medical diagnosis tool</strong> and should
-        not be used to make treatment or clinical decisions.
-        The underlying model was developed using the UCI Heart Disease
-        dataset and has not been externally validated on a Nigerian
-        or broader African population.
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-# ============================================================
-# LOAD MODEL
+# LOAD MODEL AND METADATA
 # ============================================================
 
 @st.cache_resource
 def load_model():
-
-    if not MODEL_PATH.exists():
+    if not MODEL_PATH.is_file():
         raise FileNotFoundError(
-            f"Model file not found: {MODEL_PATH.name}"
+            f"Missing model file: {MODEL_PATH.name}"
         )
-
     return joblib.load(MODEL_PATH)
 
 
-# ============================================================
-# LOAD METADATA
-# ============================================================
-
 @st.cache_data
 def load_metadata():
-
-    if not METADATA_PATH.exists():
+    if not METADATA_PATH.is_file():
         raise FileNotFoundError(
-            f"Metadata file not found: {METADATA_PATH.name}"
+            f"Missing metadata file: {METADATA_PATH.name}"
         )
-
-    with open(
-        METADATA_PATH,
-        "r",
-        encoding="utf-8",
-    ) as file:
-
+    with open(METADATA_PATH, "r", encoding="utf-8") as file:
         return json.load(file)
 
 
-# ============================================================
-# INITIALIZE MODEL
-# ============================================================
-
 try:
-
     model = load_model()
     metadata = load_metadata()
-
 except Exception as error:
+    st.error("AfriHealth AI could not load its model files.")
+    st.code(str(error))
+    st.stop()
 
+
+if metadata.get("input_features", DEFAULT_FEATURES) != DEFAULT_FEATURES:
     st.error(
-        "AfriHealth AI could not load its model files."
+        "The feature list in model_metadata.json does not match "
+        "the features expected by app.py."
     )
-
-    st.exception(error)
-
     st.stop()
 
 
 # ============================================================
-# VALIDATE FEATURE SCHEMA
+# HEADER
 # ============================================================
 
-metadata_features = metadata.get(
-    "input_features",
-    DEFAULT_FEATURES,
+st.title("🫀 AfriHealth AI")
+st.subheader("AI-powered health-risk intelligence for Africa")
+
+st.write(
+    "A research and educational prototype for exploring "
+    "machine-learning-based cardiovascular risk classification."
 )
 
-if metadata_features != DEFAULT_FEATURES:
-
-    st.error(
-        "Model feature schema does not match the application's "
-        "expected feature schema."
-    )
-
-    st.write(
-        "Expected features:",
-        DEFAULT_FEATURES,
-    )
-
-    st.write(
-        "Metadata features:",
-        metadata_features,
-    )
-
-    st.stop()
-
-
-# ============================================================
-# MODEL METRICS
-# ============================================================
-
-selected_model = metadata.get(
-    "selected_model",
-    "Not recorded",
+st.info(
+    "**Research and educational use only.** This prototype is "
+    "not a medical diagnostic tool. Its model uses the UCI Heart "
+    "Disease dataset and has not been externally validated on "
+    "Nigerian or broader African populations."
 )
+
+st.divider()
+
+
+# ============================================================
+# PROJECT METRICS
+# ============================================================
+
+st.header("📊 Project Overview")
+
+selected_model = metadata.get("selected_model", "Not recorded")
 
 cv_auc = metadata.get(
     "cross_validation_roc_auc",
-    metadata.get(
-        "cross_validation_auc"
-    ),
+    metadata.get("cross_validation_auc"),
 )
 
 if cv_auc is not None:
-
     try:
         cv_auc_display = f"{float(cv_auc):.4f}"
-
-    except (TypeError, ValueError):
-
+    except (ValueError, TypeError):
         cv_auc_display = str(cv_auc)
-
 else:
+    cv_auc_display = "Not recorded"
 
-    cv_auc_display = "N/A"
+training_records = metadata.get("training_records", "N/A")
+test_records = metadata.get("test_records", "N/A")
 
-
-training_records = metadata.get(
-    "training_records",
-    "N/A",
-)
-
-test_records = metadata.get(
-    "test_records",
-    "N/A",
-)
-
-
-# ============================================================
-# METRIC CARDS
-# ============================================================
-
-col1, col2, col3, col4 = st.columns(4)
-
+col1, col2 = st.columns(2)
 
 with col1:
-
-    st.markdown(
-        f"""
-        <div class="metric-card">
-            <div class="metric-label">
-                Selected Model
-            </div>
-
-            <div class="metric-number">
-                {selected_model}
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    st.metric(
+        label="Selected Model",
+        value=str(selected_model),
     )
-
 
 with col2:
-
-    st.markdown(
-        f"""
-        <div class="metric-card">
-            <div class="metric-label">
-                CV ROC-AUC
-            </div>
-
-            <div class="metric-number">
-                {cv_auc_display}
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    st.metric(
+        label="Cross-validation ROC-AUC",
+        value=cv_auc_display,
     )
 
+col3, col4 = st.columns(2)
 
 with col3:
-
-    st.markdown(
-        f"""
-        <div class="metric-card">
-            <div class="metric-label">
-                Training Records
-            </div>
-
-            <div class="metric-number">
-                {training_records}
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    st.metric(
+        label="Training Records",
+        value=str(training_records),
     )
-
 
 with col4:
-
-    st.markdown(
-        f"""
-        <div class="metric-card">
-            <div class="metric-label">
-                Holdout Records
-            </div>
-
-            <div class="metric-number">
-                {test_records}
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    st.metric(
+        label="Holdout Records",
+        value=str(test_records),
     )
 
-
-# ============================================================
-# RESEARCH INPUT
-# ============================================================
-
-st.markdown(
-    '<div class="section-heading">Research Input</div>',
-    unsafe_allow_html=True,
-)
-
 st.caption(
-    "Enter values using the coding scheme of the original "
-    "UCI Heart Disease dataset. These inputs are intended "
-    "for research and educational experimentation."
+    "The ROC-AUC above is a cross-validation model-selection metric. "
+    "It is not an individual's probability of disease or a measure "
+    "of guaranteed clinical performance."
 )
 
+st.divider()
+
 
 # ============================================================
-# INPUT FORM
+# RESEARCH INPUT FORM
 # ============================================================
+
+st.header("🩺 Research Input")
+
+st.write(
+    "Enter values using the coding scheme of the original "
+    "UCI Heart Disease dataset."
+)
 
 with st.form("risk_prediction_form"):
 
-    st.subheader("👤 Demographic Information")
+    st.subheader("Demographic Information")
 
     col1, col2 = st.columns(2)
 
     with col1:
-
         age = st.number_input(
             "Age",
             min_value=1,
@@ -530,21 +179,19 @@ with st.form("risk_prediction_form"):
         )
 
     with col2:
-
         sex = st.selectbox(
             "Sex",
             options=[0, 1],
-            format_func=lambda value:
-                "Female (0)" if value == 0 else "Male (1)",
+            format_func=lambda value: (
+                "Female (0)" if value == 0 else "Male (1)"
+            ),
         )
 
-
-    st.subheader("❤️ Clinical Measurements")
+    st.subheader("Clinical Measurements")
 
     col1, col2 = st.columns(2)
 
     with col1:
-
         trestbps = st.number_input(
             "Resting Blood Pressure (trestbps)",
             min_value=50,
@@ -570,7 +217,6 @@ with st.form("risk_prediction_form"):
         )
 
     with col2:
-
         oldpeak = st.number_input(
             "ST Depression (oldpeak)",
             min_value=0.0,
@@ -582,53 +228,30 @@ with st.form("risk_prediction_form"):
         fbs = st.selectbox(
             "Fasting Blood Sugar > 120 mg/dl",
             options=[0, 1],
-            format_func=lambda value:
-                "No (0)" if value == 0 else "Yes (1)",
+            format_func=lambda value: (
+                "No (0)" if value == 0 else "Yes (1)"
+            ),
         )
 
+    st.subheader("Diagnostic Features")
 
-    st.subheader("🧪 Diagnostic Features")
-
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
 
     with col1:
-
-        cp = st.selectbox(
-            "Chest Pain Type (cp)",
-            options=[1, 2, 3, 4],
-        )
-
-        restecg = st.selectbox(
-            "Resting ECG (restecg)",
-            options=[0, 1, 2],
-        )
-
-    with col2:
-
+        cp = st.selectbox("Chest Pain Type (cp)", [1, 2, 3, 4])
+        restecg = st.selectbox("Resting ECG (restecg)", [0, 1, 2])
         exang = st.selectbox(
             "Exercise-Induced Angina (exang)",
             options=[0, 1],
-            format_func=lambda value:
-                "No (0)" if value == 0 else "Yes (1)",
+            format_func=lambda value: (
+                "No (0)" if value == 0 else "Yes (1)"
+            ),
         )
 
-        slope = st.selectbox(
-            "ST Segment Slope (slope)",
-            options=[1, 2, 3],
-        )
-
-    with col3:
-
-        ca = st.selectbox(
-            "Major Vessels (ca)",
-            options=[0, 1, 2, 3],
-        )
-
-        thal = st.selectbox(
-            "Thalassemia (thal)",
-            options=[3, 6, 7],
-        )
-
+    with col2:
+        slope = st.selectbox("ST Segment Slope (slope)", [1, 2, 3])
+        ca = st.selectbox("Major Vessels (ca)", [0, 1, 2, 3])
+        thal = st.selectbox("Thalassemia (thal)", [3, 6, 7])
 
     submitted = st.form_submit_button(
         "🫀 Run AfriHealth AI Analysis",
@@ -642,147 +265,68 @@ with st.form("risk_prediction_form"):
 
 if submitted:
 
-    # Create input dataframe
     input_data = pd.DataFrame(
-        {
-            "age": [age],
-            "sex": [sex],
-            "cp": [cp],
-            "trestbps": [trestbps],
-            "chol": [chol],
-            "fbs": [fbs],
-            "restecg": [restecg],
-            "thalach": [thalach],
-            "exang": [exang],
-            "oldpeak": [oldpeak],
-            "slope": [slope],
-            "ca": [ca],
-            "thal": [thal],
-        },
+        [{
+            "age": age,
+            "sex": sex,
+            "cp": cp,
+            "trestbps": trestbps,
+            "chol": chol,
+            "fbs": fbs,
+            "restecg": restecg,
+            "thalach": thalach,
+            "exang": exang,
+            "oldpeak": oldpeak,
+            "slope": slope,
+            "ca": ca,
+            "thal": thal,
+        }],
         columns=DEFAULT_FEATURES,
     )
 
-
-    # Run model
     try:
-
-        prediction = int(
-            model.predict(input_data)[0]
-        )
+        prediction = int(model.predict(input_data)[0])
 
         probability = None
 
         if hasattr(model, "predict_proba"):
-
-            probabilities = model.predict_proba(
-                input_data
-            )[0]
-
+            probabilities = model.predict_proba(input_data)[0]
             classes = list(model.classes_)
 
             if 1 in classes:
-
-                positive_index = classes.index(1)
-
                 probability = float(
-                    probabilities[positive_index]
+                    probabilities[classes.index(1)]
                 )
 
     except Exception as error:
-
-        st.error(
-            "The model could not process the submitted research input."
-        )
-
-        st.exception(error)
-
+        st.error("The model could not process these inputs.")
+        st.code(str(error))
         st.stop()
 
-
-    # ========================================================
-    # RESULT
-    # ========================================================
-
-    st.markdown(
-        '<div class="section-heading">Analysis Result</div>',
-        unsafe_allow_html=True,
-    )
-
+    st.divider()
+    st.header("📋 Analysis Result")
 
     if prediction == 1:
-
-        result_text = "Higher-risk classification"
-
+        st.warning("Model classification: Class 1")
     else:
-
-        result_text = "Lower-risk classification"
-
+        st.success("Model classification: Class 0")
 
     if probability is not None:
-
-        probability_text = (
-            f"{probability * 100:.2f}%"
+        st.metric(
+            label="Model-estimated probability for class 1",
+            value=f"{probability * 100:.2f}%",
         )
-
     else:
+        st.write("Probability output is not available.")
 
-        probability_text = "Not available"
-
-
-    # Safe result rendering
-    st.markdown(
-        '<div class="result-box">',
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        '<div class="result-label">AfriHealth AI Classification</div>',
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        f'<div class="result-heading">{result_text}</div>',
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        f"""
-        <div class="result-probability">
-            Model probability for class 1:
-            <strong>{probability_text}</strong>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        '</div>',
-        unsafe_allow_html=True,
-    )
-
-
-    # Responsible interpretation
     st.warning(
-        "This result is a machine-learning classification output, "
-        "not a diagnosis."
+        "This is a model classification, not a diagnosis. "
+        "The model-estimated probability is not a clinically "
+        "validated estimate of an individual's disease risk. "
+        "Do not use this output to make medical or treatment decisions."
     )
 
-    st.info(
-        "The probability shown is the model's estimated probability "
-        "for class 1 within this dataset and model. It should not "
-        "be interpreted as an individual's clinical probability "
-        "of having cardiovascular disease."
-    )
-
-    st.info(
-        "The model has not been clinically validated for Nigerian "
-        "or African populations."
-    )
-
-
-    # Submitted input
-    with st.expander("View research input"):
-
+    with st.expander("View submitted research inputs"):
         st.dataframe(
             input_data,
             use_container_width=True,
@@ -794,89 +338,52 @@ if submitted:
 # MODEL INFORMATION
 # ============================================================
 
-st.markdown(
-    '<div class="section-heading">Model Information</div>',
-    unsafe_allow_html=True,
-)
+st.divider()
+st.header("🔬 Model Information")
 
+with st.expander("View model and research details"):
 
-with st.expander(
-    "🔬 View model and research details"
-):
-
-    st.write(
-        "Selected model:",
-        metadata.get(
-            "selected_model",
-            "Not recorded",
-        ),
-    )
+    st.write("Selected model:", selected_model)
 
     st.write(
         "Selection metric:",
-        metadata.get(
-            "selection_metric",
-            "Not recorded",
-        ),
+        metadata.get("selection_metric", "Not recorded"),
     )
 
+    # Correct metadata key, with backward compatibility.
     st.write(
         "Cross-validation ROC-AUC:",
-        metadata.get(
-            "cross_validation_roc_auc",
-            metadata.get(
-                "cross_validation_auc",
-                "Not recorded",
-            ),
-        ),
+        cv_auc_display,
     )
 
     st.write(
         "Dataset:",
-        metadata.get(
-            "dataset",
-            "Not recorded",
-        ),
+        metadata.get("dataset", "Not recorded"),
     )
 
     st.write(
         "Training records:",
-        metadata.get(
-            "training_records",
-            "Not recorded",
-        ),
+        training_records,
     )
 
     st.write(
         "Holdout test records:",
-        metadata.get(
-            "test_records",
-            "Not recorded",
-        ),
+        test_records,
     )
 
     st.write(
         "Scikit-learn version:",
-        metadata.get(
-            "scikit_learn_version",
-            "Not recorded",
-        ),
+        metadata.get("scikit_learn_version", "Not recorded"),
     )
 
     st.write(
         "Model version:",
-        metadata.get(
-            "version",
-            "Not recorded",
-        ),
+        metadata.get("version", "Not recorded"),
     )
 
     st.write(
-        "Created:",
-        metadata.get(
-            "created_at_utc",
-            "Not recorded",
-        ),
+        "Created (UTC):",
+        metadata.get("created_at_utc", "Not recorded"),
     )
 
     st.write(
@@ -889,33 +396,29 @@ with st.expander(
 
 
 # ============================================================
-# FEATURE INFORMATION
+# FEATURE SCHEMA
 # ============================================================
 
-with st.expander(
-    "📋 View input feature schema"
-):
+with st.expander("📚 View input feature schema"):
 
-    feature_table = pd.DataFrame(
-        {
-            "Feature": DEFAULT_FEATURES,
-            "Purpose": [
-                "Age",
-                "Sex coding",
-                "Chest pain type",
-                "Resting blood pressure",
-                "Serum cholesterol",
-                "Fasting blood sugar",
-                "Resting ECG",
-                "Maximum heart rate",
-                "Exercise-induced angina",
-                "ST depression",
-                "ST segment slope",
-                "Major vessels",
-                "Thalassemia",
-            ],
-        }
-    )
+    feature_table = pd.DataFrame({
+        "Feature": DEFAULT_FEATURES,
+        "Purpose": [
+            "Age",
+            "Sex coding",
+            "Chest pain type",
+            "Resting blood pressure",
+            "Serum cholesterol",
+            "Fasting blood sugar",
+            "Resting ECG",
+            "Maximum heart rate",
+            "Exercise-induced angina",
+            "ST depression",
+            "ST segment slope",
+            "Major vessels",
+            "Thalassemia",
+        ],
+    })
 
     st.dataframe(
         feature_table,
@@ -928,49 +431,30 @@ with st.expander(
 # RESEARCH LIMITATIONS
 # ============================================================
 
-with st.expander(
-    "⚠️ Research limitations"
-):
+with st.expander("⚠️ Research limitations"):
 
     st.markdown(
         """
-        **Dataset**
+        **Dataset:** UCI Heart Disease dataset, repository ID 45.
 
-        The prototype uses the UCI Heart Disease dataset,
-        repository ID 45.
+        **Sample size:** 303 records, with 242 used for training
+        and 61 reserved for holdout testing.
 
-        **Population limitation**
+        **Model selection:** Logistic Regression was selected using
+        mean stratified cross-validation ROC-AUC.
 
-        The dataset is not representative of the Nigerian
-        or broader African population.
+        **Population limitation:** The dataset is not representative
+        of the Nigerian or broader African population.
 
-        **Sample size**
+        **External validation:** The model has not been externally
+        validated on an independent Nigerian or African clinical dataset.
 
-        The project contains 303 records, with 242 records
-        used for training and 61 records reserved as a
-        holdout test set.
+        **Clinical use:** Do not use this prototype for diagnosis,
+        treatment, patient triage, or clinical decision-making.
 
-        **Model selection**
-
-        Logistic Regression was selected using mean stratified
-        cross-validation ROC-AUC.
-
-        **Validation**
-
-        The model has not undergone external validation on an
-        independent Nigerian or African clinical dataset.
-
-        **Clinical use**
-
-        The system should not be used for diagnosis, treatment,
-        patient triage, or other clinical decision-making.
-
-        **Research direction**
-
-        Future work should include larger and more representative
-        African datasets, external validation, calibration analysis,
-        fairness evaluation, clinical collaboration, privacy
-        protections, and prospective validation.
+        **Future research:** Larger representative datasets, external
+        validation, calibration, fairness evaluation, privacy safeguards,
+        and clinical collaboration are needed.
         """
     )
 
@@ -979,13 +463,9 @@ with st.expander(
 # FOOTER
 # ============================================================
 
-st.markdown(
-    """
-    <div class="footer">
-        <strong>AfriHealth AI</strong><br>
-        AI-powered health-risk intelligence for Africa.<br><br>
-        Research and educational prototype · Version 0.1.0
-    </div>
-    """,
-    unsafe_allow_html=True,
+st.divider()
+
+st.caption(
+    "AfriHealth AI | AI-powered health-risk intelligence for Africa | "
+    "Research and educational prototype | Version 0.1.0"
 )
