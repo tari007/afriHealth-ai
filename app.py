@@ -56,23 +56,10 @@ DEFAULT_FEATURES = [
 st.markdown(
     """
     <style>
-
-    /* ================================
-       GLOBAL
-       ================================ */
-
     .stApp {
         background:
-            radial-gradient(
-                circle at top right,
-                rgba(0, 180, 180, 0.10),
-                transparent 30%
-            ),
-            radial-gradient(
-                circle at top left,
-                rgba(0, 120, 180, 0.08),
-                transparent 28%
-            ),
+            radial-gradient(circle at top right, rgba(0, 180, 180, 0.10), transparent 30%),
+            radial-gradient(circle at top left, rgba(0, 120, 180, 0.08), transparent 28%),
             #07111f;
         color: #f5f7fa;
     }
@@ -86,10 +73,6 @@ st.markdown(
         padding-top: 2rem;
         padding-bottom: 3rem;
     }
-
-    /* ================================
-       HEADINGS
-       ================================ */
 
     h1, h2, h3 {
         color: #f5f7fa !important;
@@ -105,17 +88,12 @@ st.markdown(
         margin-top: 1.5rem;
     }
 
-    /* ================================
-       HERO
-       ================================ */
-
     .hero {
-        background:
-            linear-gradient(
-                135deg,
-                rgba(10, 30, 50, 0.96),
-                rgba(8, 38, 50, 0.94)
-            );
+        background: linear-gradient(
+            135deg,
+            rgba(10, 30, 50, 0.96),
+            rgba(8, 38, 50, 0.94)
+        );
         border: 1px solid rgba(0, 220, 200, 0.20);
         border-radius: 24px;
         padding: 2.5rem;
@@ -150,19 +128,6 @@ st.markdown(
         max-width: 850px;
     }
 
-    /* ================================
-       CARDS
-       ================================ */
-
-    .card {
-        background: rgba(13, 28, 45, 0.88);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 18px;
-        padding: 1.4rem;
-        margin-bottom: 1rem;
-        box-shadow: 0 12px 35px rgba(0, 0, 0, 0.16);
-    }
-
     .metric-card {
         background: linear-gradient(
             135deg,
@@ -187,14 +152,6 @@ st.markdown(
         font-weight: 800;
     }
 
-    /* ================================
-       TEXT
-       ================================ */
-
-    .muted {
-        color: #9fb0c0;
-    }
-
     .small-text {
         font-size: 0.85rem;
         color: #93a5b5;
@@ -209,17 +166,12 @@ st.markdown(
         margin-bottom: 0.8rem;
     }
 
-    /* ================================
-       RESULT
-       ================================ */
-
     .result-card {
-        background:
-            linear-gradient(
-                135deg,
-                rgba(0, 150, 130, 0.15),
-                rgba(10, 30, 50, 0.95)
-            );
+        background: linear-gradient(
+            135deg,
+            rgba(0, 150, 130, 0.15),
+            rgba(10, 30, 50, 0.95)
+        );
         border: 1px solid rgba(0, 220, 200, 0.25);
         border-radius: 20px;
         padding: 1.6rem;
@@ -239,29 +191,11 @@ st.markdown(
         font-weight: 800;
     }
 
-    /* ================================
-       INPUTS
-       ================================ */
-
-    .stTextInput input,
-    .stNumberInput input,
-    .stSelectbox div[data-baseweb="select"] {
-        border-radius: 10px;
-    }
-
-    /* ================================
-       BUTTONS
-       ================================ */
-
     .stButton > button {
         width: 100%;
         border-radius: 12px;
         border: 1px solid rgba(0, 220, 200, 0.30);
-        background: linear-gradient(
-            135deg,
-            #0b8f87,
-            #087f9a
-        );
+        background: linear-gradient(135deg, #0b8f87, #087f9a);
         color: white;
         font-weight: 700;
         padding: 0.7rem 1rem;
@@ -272,10 +206,6 @@ st.markdown(
         border-color: #5fffe9;
         transform: translateY(-1px);
     }
-
-    /* ================================
-       DISCLAIMER
-       ================================ */
 
     .disclaimer {
         background: rgba(255, 193, 7, 0.07);
@@ -288,10 +218,6 @@ st.markdown(
         margin: 1rem 0 1.5rem 0;
     }
 
-    /* ================================
-       FOOTER
-       ================================ */
-
     .footer {
         text-align: center;
         color: #738596;
@@ -301,12 +227,7 @@ st.markdown(
         border-top: 1px solid rgba(255, 255, 255, 0.07);
     }
 
-    /* ================================
-       MOBILE
-       ================================ */
-
     @media (max-width: 768px) {
-
         .block-container {
             padding-left: 1rem;
             padding-right: 1rem;
@@ -334,7 +255,6 @@ st.markdown(
             min-height: auto;
         }
     }
-
     </style>
     """,
     unsafe_allow_html=True,
@@ -342,27 +262,21 @@ st.markdown(
 
 
 # ============================================================
-# HERO SECTION
+# HERO
 # ============================================================
 
 st.markdown(
     """
     <div class="hero">
+        <div class="hero-badge">AI + HEALTH RESEARCH PROTOTYPE</div>
 
-        <div class="hero-badge">
-            AI + HEALTH RESEARCH PROTOTYPE
-        </div>
-
-        <div class="hero-title">
-            🫀 AfriHealth AI
-        </div>
+        <div class="hero-title">🫀 AfriHealth AI</div>
 
         <div class="hero-subtitle">
             AI-powered health-risk intelligence for Africa.
             A research and educational prototype for exploring
             machine-learning-based cardiovascular risk classification.
         </div>
-
     </div>
     """,
     unsafe_allow_html=True,
@@ -377,11 +291,9 @@ st.markdown(
     """
     <div class="disclaimer">
         <strong>⚠️ Research and Educational Use Only</strong><br><br>
-
         AfriHealth AI is a machine-learning research prototype.
         It is <strong>not a medical diagnosis tool</strong> and should
         not be used to make treatment or clinical decisions.
-
         The underlying model was developed using the UCI Heart Disease
         dataset and has not been externally validated on a Nigerian
         or broader African population.
@@ -392,55 +304,36 @@ st.markdown(
 
 
 # ============================================================
-# MODEL LOADING
+# MODEL AND METADATA LOADING
 # ============================================================
 
 @st.cache_resource
 def load_model():
-    """Load the trained machine-learning pipeline."""
-
     if not MODEL_PATH.exists():
         raise FileNotFoundError(
             f"Model file not found: {MODEL_PATH.name}"
         )
 
-    model = joblib.load(MODEL_PATH)
-
-    return model
+    return joblib.load(MODEL_PATH)
 
 
 @st.cache_data
 def load_metadata():
-    """Load model metadata."""
-
     if not METADATA_PATH.exists():
         raise FileNotFoundError(
             f"Metadata file not found: {METADATA_PATH.name}"
         )
 
     with open(METADATA_PATH, "r", encoding="utf-8") as file:
-        metadata = json.load(file)
+        return json.load(file)
 
-    return metadata
-
-
-# ============================================================
-# LOAD MODEL + METADATA
-# ============================================================
 
 try:
-
     model = load_model()
     metadata = load_metadata()
-
 except Exception as error:
-
-    st.error(
-        "AfriHealth AI could not load its model files."
-    )
-
+    st.error("AfriHealth AI could not load its model files.")
     st.exception(error)
-
     st.stop()
 
 
@@ -454,15 +347,12 @@ metadata_features = metadata.get(
 )
 
 if metadata_features != DEFAULT_FEATURES:
-
     st.error(
         "Model feature schema does not match the application's "
         "expected feature schema."
     )
-
     st.write("Expected features:", DEFAULT_FEATURES)
     st.write("Metadata features:", metadata_features)
-
     st.stop()
 
 
@@ -470,31 +360,49 @@ if metadata_features != DEFAULT_FEATURES:
 # PROJECT METRICS
 # ============================================================
 
+cv_auc = metadata.get(
+    "cross_validation_roc_auc",
+    metadata.get("cross_validation_auc"),
+)
+
+if cv_auc is not None:
+    try:
+        cv_auc_display = f"{float(cv_auc):.4f}"
+    except (TypeError, ValueError):
+        cv_auc_display = str(cv_auc)
+else:
+    cv_auc_display = "N/A"
+
+selected_model = metadata.get(
+    "selected_model",
+    "Not recorded",
+)
+
+training_records = metadata.get(
+    "training_records",
+    "N/A",
+)
+
+test_records = metadata.get(
+    "test_records",
+    "N/A",
+)
+
+
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     st.markdown(
-        """
+        f"""
         <div class="metric-card">
             <div class="metric-label">Selected Model</div>
-            <div class="metric-value">Logistic Regression</div>
+            <div class="metric-value">{selected_model}</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
 with col2:
-    cv_auc = metadata.get(
-        "cross_validation_roc_auc",
-        metadata.get("cross_validation_auc"),
-    )
-
-    cv_auc_display = (
-        f"{float(cv_auc):.4f}"
-        if cv_auc is not None
-        else "N/A"
-    )
-
     st.markdown(
         f"""
         <div class="metric-card">
@@ -506,12 +414,6 @@ with col2:
     )
 
 with col3:
-
-    training_records = metadata.get(
-        "training_records",
-        "N/A",
-    )
-
     st.markdown(
         f"""
         <div class="metric-card">
@@ -523,12 +425,6 @@ with col3:
     )
 
 with col4:
-
-    test_records = metadata.get(
-        "test_records",
-        "N/A",
-    )
-
     st.markdown(
         f"""
         <div class="metric-card">
@@ -541,7 +437,7 @@ with col4:
 
 
 # ============================================================
-# MAIN APPLICATION
+# RESEARCH INPUT
 # ============================================================
 
 st.markdown(
@@ -572,7 +468,6 @@ with st.form("risk_prediction_form"):
     col1, col2 = st.columns(2)
 
     with col1:
-
         age = st.number_input(
             "Age",
             min_value=1,
@@ -582,24 +477,19 @@ with st.form("risk_prediction_form"):
         )
 
     with col2:
-
         sex = st.selectbox(
             "Sex",
             options=[0, 1],
-            format_func=lambda x: (
-                "Female (0)"
-                if x == 0
-                else "Male (1)"
+            format_func=lambda value: (
+                "Female (0)" if value == 0 else "Male (1)"
             ),
         )
-
 
     st.markdown("### ❤️ Clinical Measurements")
 
     col1, col2 = st.columns(2)
 
     with col1:
-
         trestbps = st.number_input(
             "Resting Blood Pressure (trestbps)",
             min_value=50,
@@ -625,7 +515,6 @@ with st.form("risk_prediction_form"):
         )
 
     with col2:
-
         oldpeak = st.number_input(
             "ST Depression (oldpeak)",
             min_value=0.0,
@@ -637,20 +526,16 @@ with st.form("risk_prediction_form"):
         fbs = st.selectbox(
             "Fasting Blood Sugar > 120 mg/dl",
             options=[0, 1],
-            format_func=lambda x: (
-                "No (0)"
-                if x == 0
-                else "Yes (1)"
+            format_func=lambda value: (
+                "No (0)" if value == 0 else "Yes (1)"
             ),
         )
-
 
     st.markdown("### 🧪 Diagnostic Features")
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
-
         cp = st.selectbox(
             "Chest Pain Type (cp)",
             options=[1, 2, 3, 4],
@@ -662,14 +547,11 @@ with st.form("risk_prediction_form"):
         )
 
     with col2:
-
         exang = st.selectbox(
             "Exercise-Induced Angina (exang)",
             options=[0, 1],
-            format_func=lambda x: (
-                "No (0)"
-                if x == 0
-                else "Yes (1)"
+            format_func=lambda value: (
+                "No (0)" if value == 0 else "Yes (1)"
             ),
         )
 
@@ -679,7 +561,6 @@ with st.form("risk_prediction_form"):
         )
 
     with col3:
-
         ca = st.selectbox(
             "Major Vessels (ca)",
             options=[0, 1, 2, 3],
@@ -689,7 +570,6 @@ with st.form("risk_prediction_form"):
             "Thalassemia (thal)",
             options=[3, 6, 7],
         )
-
 
     submitted = st.form_submit_button(
         "🫀 Run AfriHealth AI Analysis"
@@ -702,148 +582,111 @@ with st.form("risk_prediction_form"):
 
 if submitted:
 
+    input_data = pd.DataFrame(
+        [
+            {
+                "age": age,
+                "sex": sex,
+                "cp": cp,
+                "trestbps": trestbps,
+                "chol": chol,
+                "fbs": fbs,
+                "restecg": restecg,
+                "thalach": thalach,
+                "exang": exang,
+                "oldpeak": oldpeak,
+                "slope": slope,
+                "ca": ca,
+                "thal": thal,
+            }
+        ],
+        columns=DEFAULT_FEATURES,
+    )
+
     try:
-
-        # ----------------------------------------------------
-        # Create input dataframe
-        # ----------------------------------------------------
-
-        input_data = pd.DataFrame(
-            [
-                {
-                    "age": age,
-                    "sex": sex,
-                    "cp": cp,
-                    "trestbps": trestbps,
-                    "chol": chol,
-                    "fbs": fbs,
-                    "restecg": restecg,
-                    "thalach": thalach,
-                    "exang": exang,
-                    "oldpeak": oldpeak,
-                    "slope": slope,
-                    "ca": ca,
-                    "thal": thal,
-                }
-            ],
-            columns=DEFAULT_FEATURES,
-        )
-
-
-        # ----------------------------------------------------
-        # Prediction
-        # ----------------------------------------------------
-
-        prediction = model.predict(input_data)[0]
-
-
-        # ----------------------------------------------------
-        # Probability
-        # ----------------------------------------------------
+        prediction = int(model.predict(input_data)[0])
 
         probability = None
 
         if hasattr(model, "predict_proba"):
-
-            probabilities = model.predict_proba(
-                input_data
-            )[0]
-
+            probabilities = model.predict_proba(input_data)[0]
             classes = list(model.classes_)
 
             if 1 in classes:
-
                 positive_index = classes.index(1)
-
                 probability = float(
                     probabilities[positive_index]
                 )
 
-
-        # ----------------------------------------------------
-        # Result
-        # ----------------------------------------------------
-
-        st.markdown(
-            '<div class="section-title">Analysis Result</div>',
-            unsafe_allow_html=True,
+    except Exception as error:
+        st.error(
+            "The model could not process the submitted research input."
         )
+        st.exception(error)
+        st.stop()
 
+    # --------------------------------------------------------
+    # RESULT
+    # --------------------------------------------------------
 
-        if int(prediction) == 1:
+    st.markdown(
+        '<div class="section-title">Analysis Result</div>',
+        unsafe_allow_html=True,
+    )
 
-            result_text = "Higher-risk classification"
+    if prediction == 1:
+        result_text = "Higher-risk classification"
+    else:
+        result_text = "Lower-risk classification"
 
-        else:
+    if probability is not None:
+        probability_text = f"{probability * 100:.2f}%"
+    else:
+        probability_text = "Not available"
 
-            result_text = "Lower-risk classification"
-
-
-        probability_text = (
-            f"{probability * 100:.2f}%"
-            if probability is not None
-            else "Not available"
-        )
-
-
-        st.markdown(
-            f"""
-            <div class="result-card">
-
-                <div class="result-title">
-                    AfriHealth AI Classification
-                </div>
-
-                <div class="result-value">
-                    {result_text}
-                </div>
-
-                <br>
-
-                <div class="small-text">
-                    Model probability for class 1:
-                    <strong>{probability_text}</strong>
-                </div>
-
+    st.markdown(
+        f"""
+        <div class="result-card">
+            <div class="result-title">
+                AfriHealth AI Classification
             </div>
-            """,
-            unsafe_allow_html=True,
+
+            <div class="result-value">
+                {result_text}
+            </div>
+
+            <br>
+
+            <div class="small-text">
+                Model probability for class 1:
+                <strong>{probability_text}</strong>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.warning(
+        """
+        This result is a machine-learning classification output,
+        not a diagnosis.
+
+        The probability shown is the model's estimated probability
+        for class 1 within this dataset and model. It should not be
+        interpreted as an individual's clinical probability of having
+        cardiovascular disease.
+
+        The model has not been clinically validated for Nigerian
+        or African populations.
+        """
+    )
+
+    with st.expander("View research input"):
+        st.dataframe(
+            input_data,
+            use_container_width=True,
+            hide_index=True,
         )
-
-
-        # ----------------------------------------------------
-        # Responsible interpretation
-        # ----------------------------------------------------
-
-        st.warning(
-            """
-            This result is a machine-learning classification output,
-            not a diagnosis.
-
-            The probability shown is the model's estimated probability
-            for class 1 within this dataset and model. It should not be
-            interpreted as an individual's clinical probability of having
-            cardiovascular disease.
-
-            The model has not been clinically validated for Nigerian
-            or African populations.
-            """
-        )
-
-
-        # ----------------------------------------------------
-        # Display submitted data
-        # ----------------------------------------------------
-
-        with st.expander(
-            "View research input"
-        ):
-
-            st.dataframe(
-                input_data,
-                use_container_width=True,
-                hide_index=True,
-            )
 
 
 # ============================================================
@@ -876,7 +719,6 @@ with st.expander(
         ),
     )
 
-    # FIXED METADATA KEY
     st.write(
         "Cross-validation ROC-AUC:",
         metadata.get(
@@ -949,9 +791,7 @@ with st.expander(
 # FEATURE INFORMATION
 # ============================================================
 
-with st.expander(
-    "📋 View input feature schema"
-):
+with st.expander("📋 View input feature schema"):
 
     feature_table = pd.DataFrame(
         {
@@ -982,12 +822,10 @@ with st.expander(
 
 
 # ============================================================
-# DATASET LIMITATIONS
+# RESEARCH LIMITATIONS
 # ============================================================
 
-with st.expander(
-    "⚠️ Research limitations"
-):
+with st.expander("⚠️ Research limitations"):
 
     st.markdown(
         """
@@ -1039,13 +877,9 @@ with st.expander(
 st.markdown(
     """
     <div class="footer">
-
         <strong>AfriHealth AI</strong><br>
-
         AI-powered health-risk intelligence for Africa.<br><br>
-
         Research and educational prototype · Version 0.1.0
-
     </div>
     """,
     unsafe_allow_html=True,
