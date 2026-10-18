@@ -346,6 +346,269 @@ if submitted:
 
 
 # ============================================================
+# BUILD 04 - MODEL EVALUATION DASHBOARD
+# ============================================================
+
+EVALUATION_PATH = BASE_DIR / "evaluation_predictions.csv"
+
+st.markdown(
+    '<div class="section-title">Model Evaluation Dashboard</div>',
+    unsafe_allow_html=True,
+)
+
+st.caption(
+    "Metrics below are calculated from the exported holdout "
+    "predictions. They describe performance on this dataset only."
+)
+
+if not EVALUATION_PATH.exists():
+
+    st.info(
+        "Evaluation data is not available yet. Add "
+        "evaluation_predictions.csv to the repository root "
+        "alongside app.py."
+    )
+
+else:
+
+    try:
+        evaluation_df = pd.read_csv(EVALUATION_PATH)
+
+        required_columns = {
+            "y_true",
+            "y_pred",
+            "prob_class_1",
+        }
+
+        if not required_columns.issubset(evaluation_df.columns):
+            st.error(
+                "The evaluation CSV is missing required columns: "
+                + ", ".join(
+                    sorted(required_columns - set(evaluation_df.columns))
+                )
+            )
+            st.stop()
+
+        if evaluation_df.empty:
+            st.error("The evaluation CSV contains no rows.")
+            st.stop()
+
+        if evaluation_df[list(required_columns)].isnull().any().any():
+            st.error(
+                "The evaluation CSV contains missing values "
+                "in required columns."
+            )
+            st.stop()
+
+        y_true_eval = evaluation_df["y_true"].astype(int).to_numpy()
+        y_pred_eval = evaluation_df["y_pred"].astype(int).to_numpy()
+        prob_eval = evaluation_df["prob_class_1"].astype(float).to_numpy()
+
+        if not set(np.unique(y_true_eval)).issubset({0, 1}):
+            st.error("Actual labels must contain only 0 and 1.")
+            st.stop()
+
+        if not set(np.unique(y_pred_eval)).issubset({0, 1}):
+            st.error("Predicted labels must contain only 0 and 1.")
+            st.stop()
+
+        if not np.isfinite(prob_eval).all():
+            st.error("The probability column contains invalid values.")
+            st.stop()
+
+        if ((prob_eval < 0) | (prob_eval > 1)).any():
+            st.error("Probabilities must be between 0 and 1.")
+            st.stop()
+
+        if len(np.unique(y_true_eval)) < 2:
+            st.warning(
+                "ROC-AUC and the ROC curve require both actual "
+                "classes to be present in the evaluation data."
+            )
+
+        # Calculate metrics from the actual exported predictions.
+        accuracy = accuracy_score(y_true_eval, y_pred_eval)
+        precision = precision_score(
+            y_true_eval, y_pred_eval, zero_division=0
+        )
+        recall = recall_score(
+            y_true_eval, y_pred_eval, zero_division=0
+        )
+        f1 = f1_score(
+            y_true_eval, y_pred_eval, zero_division=0
+        )
+
+        metric_cols = st.columns(4)
+
+        metric_values = [
+            ("Accuracy", accuracy),
+            ("Precision", precision),
+            ("Recall", recall),
+            ("F1 Score", f1),
+        ]
+
+        for column, (label, value) in zip(metric_cols, metric_values):
+            with column:
+                st.metric(label, f"{value:.3f}")
+
+        # Confusion matrix
+        st.markdown("### Confusion Matrix")
+
+        cm = confusion_matrix(
+            y_true_eval,
+            y_pred_eval,
+            labels=[0, 1],
+        )
+
+        cm_figure = go.Figure(
+            data=go.Heatmap(
+                z=cm,
+                x=["Predicted 0", "Predicted 1"],
+                y=["Actual 0", "Actual 1"],
+                colorscale=[
+                    [0, "#102235"],
+                    [0.5, "#087f8c"],
+                    [1, "#5fffe9"],
+                ],
+                text=cm,
+                texttemplate="%{text}",
+                textfont={"size": 18, "color": "white"},
+                showscale=False,
+            )
+        )
+
+        cm_figure.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            xaxis_title="Predicted class",
+            yaxis_title="Actual class",
+            height=380,
+            margin=dict(l=30, r=20, t=20, b=40),
+        )
+
+        st.plotly_chart(
+            cm_figure,
+            use_container_width=True,
+        )
+
+        st.caption(
+            "Class 0 and class 1 follow the project's original "
+            "binary target transformation. The matrix counts "
+            "correct and incorrect classifications in the holdout set."
+        )
+
+        # ROC curve
+        st.markdown("### Receiver Operating Characteristic (ROC) Curve")
+
+        if len(np.unique(y_true_eval)) == 2:
+
+            fpr, tpr, thresholds = roc_curve(
+                y_true_eval,
+                prob_eval,
+                pos_label=1,
+            )
+
+            auc_value = roc_auc_score(y_true_eval, prob_eval)
+
+            roc_figure = go.Figure()
+
+            roc_figure.add_trace(
+                go.Scatter(
+                    x=fpr,
+                    y=tpr,
+                    mode="lines",
+                    name=f"Holdout ROC (AUC = {auc_value:.3f})",
+                    line=dict(color="#5fffe9", width=3),
+                )
+            )
+
+            roc_figure.add_trace(
+                go.Scatter(
+                    x=[0, 1],
+                    y=[0, 1],
+                    mode="lines",
+                    name="Chance reference",
+                    line=dict(
+                        color="#9fb0c0",
+                        width=2,
+                        dash="dash",
+                    ),
+                )
+            )
+
+            roc_figure.update_layout(
+                template="plotly_dark",
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                xaxis_title="False Positive Rate",
+                yaxis_title="True Positive Rate",
+                xaxis=dict(range=[0, 1]),
+                yaxis=dict(range=[0, 1.02]),
+                height=420,
+                legend=dict(orientation="h", y=-0.2),
+                margin=dict(l=30, r=20, t=25, b=70),
+            )
+
+            st.plotly_chart(
+                roc_figure,
+                use_container_width=True,
+            )
+
+            st.metric(
+                "Holdout ROC-AUC",
+                f"{auc_value:.3f}",
+            )
+
+            st.caption(
+                "This holdout ROC-AUC is calculated from the exported "
+                "class-1 probabilities. It is distinct from the mean "
+                "cross-validation ROC-AUC shown in the project metadata."
+            )
+
+        # Evaluation table
+        st.markdown("### Evaluation Summary")
+
+        summary_df = pd.DataFrame(
+            {
+                "Metric": [
+                    "Accuracy",
+                    "Precision",
+                    "Recall",
+                    "F1 Score",
+                ],
+                "Value": [
+                    accuracy,
+                    precision,
+                    recall,
+                    f1,
+                ],
+            }
+        )
+
+        if len(np.unique(y_true_eval)) == 2:
+            summary_df.loc[len(summary_df)] = [
+                "Holdout ROC-AUC",
+                roc_auc_score(y_true_eval, prob_eval),
+            ]
+
+        st.dataframe(
+            summary_df.style.format({"Value": "{:.4f}"}),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.caption(
+            f"Evaluation rows: {len(evaluation_df)}. "
+            "These results do not establish clinical validity, "
+            "generalisation to Nigeria, or suitability for medical use."
+        )
+
+    except Exception as error:
+        st.error("The evaluation dashboard could not load the CSV.")
+        st.exception(error)
+        
+# ============================================================
 # MODEL INFORMATION
 # ============================================================
 
