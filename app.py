@@ -1522,6 +1522,476 @@ with st.expander("⚠️ Research limitations"):
 
 
 # ============================================================
+# BUILD 06A - INDEPENDENT DATASET VALIDATION
+# ============================================================
+
+from sklearn.metrics import (
+    accuracy_score,
+    balanced_accuracy_score,
+    brier_score_loss,
+    f1_score,
+    precision_score,
+    recall_score,
+    roc_auc_score,
+    roc_curve,
+    confusion_matrix,
+)
+
+st.divider()
+st.header("🧪 Build 06: External Validation Workspace")
+
+st.write(
+    "Evaluate the existing saved model on a separately sourced "
+    "dataset with compatible features and labels. Uploading a file "
+    "does not, by itself, establish that it is independent."
+)
+
+external_features = [
+    "age", "sex", "cp", "trestbps", "chol", "fbs",
+    "restecg", "thalach", "exang", "oldpeak", "slope",
+    "ca", "thal",
+]
+
+st.caption(
+    "Required CSV columns: all 13 features listed below and a "
+    "binary target column named target. Use the original feature "
+    "coding expected by the saved model."
+)
+
+st.code(", ".join(external_features + ["target"]))
+
+external_file = st.file_uploader(
+    "Upload an authorised, de-identified validation CSV",
+    type=["csv"],
+    key="external_validation_csv",
+)
+
+external_source = st.text_input(
+    "Dataset source or study identifier",
+    placeholder="Example: independent hospital cohort, study ID",
+    key="external_validation_source",
+)
+
+st.warning(
+    "Do not upload names, addresses, phone numbers, medical record "
+    "numbers, or other directly identifying patient information."
+)
+
+if external_file is not None:
+    st.caption(
+        "Review the dataset source, permissions, target definition, "
+        "feature coding, and independence from model development "
+        "before interpreting these results."
+    )
+
+    if st.button(
+        "Run validation on uploaded dataset",
+        key="run_external_validation",
+        type="primary",
+    ):
+        try:
+            external_df = pd.read_csv(external_file)
+
+            required_external_columns = set(
+                external_features + ["target"]
+            )
+
+            missing_columns = (
+                required_external_columns - set(external_df.columns)
+            )
+
+            if missing_columns:
+                st.error(
+                    "Missing required columns: "
+                    + ", ".join(sorted(missing_columns))
+                )
+            elif external_df.empty:
+                st.error("The uploaded dataset contains no records.")
+            else:
+                # Use only the expected feature columns, in the
+                # exact order used by the saved model.
+                X_external = external_df[external_features].copy()
+                y_external_series = pd.to_numeric(
+                    external_df["target"], errors="coerce"
+                )
+
+                X_external = X_external.apply(
+                    pd.to_numeric, errors="coerce"
+                )
+
+                invalid_features = X_external.isnull().any()
+                invalid_features = invalid_features[
+                    invalid_features
+                ].index.tolist()
+
+                if invalid_features:
+                    st.error(
+                        "Missing or non-numeric values were found "
+                        "in these feature columns: "
+                        + ", ".join(invalid_features)
+                    )
+                elif y_external_series.isnull().any():
+                    st.error(
+                        "The target column contains missing or "
+                        "non-numeric values."
+                    )
+                elif not np.isfinite(
+                    X_external.to_numpy(dtype=float)
+                ).all():
+                    st.error(
+                        "Feature values must all be finite numbers."
+                    )
+                elif not np.isin(
+                    y_external_series.to_numpy(), [0, 1]
+                ).all():
+                    st.error(
+                        "The target must already be binary: 0 or 1. "
+                        "Do not use original multiclass target values "
+                        "without applying the documented transformation."
+                    )
+                elif y_external_series.nunique() < 2:
+                    st.error(
+                        "The dataset must contain both target classes "
+                        "to calculate the full validation metrics."
+                    )
+                else:
+                    y_external = y_external_series.to_numpy(
+                        dtype=int
+                    )
+
+                    if not hasattr(model, "predict_proba"):
+                        st.error(
+                            "The saved model does not support "
+                            "predict_proba; this validation workflow "
+                            "requires class probabilities."
+                        )
+                    else:
+                        model_classes = list(model.classes_)
+
+                        if 1 not in model_classes:
+                            st.error(
+                                "The saved model does not contain "
+                                "the expected positive class 1."
+                            )
+                        else:
+                            positive_index = model_classes.index(1)
+
+                            # No fitting or retraining occurs here.
+                            external_predictions = model.predict(
+                                X_external
+                            ).astype(int)
+
+                            external_probabilities = (
+                                model.predict_proba(X_external)[
+                                    :, positive_index
+                                ]
+                            )
+
+                            if (
+                                not np.isfinite(
+                                    external_probabilities
+                                ).all()
+                                or (
+                                    (external_probabilities < 0)
+                                    | (external_probabilities > 1)
+                                ).any()
+                            ):
+                                st.error(
+                                    "The model produced invalid "
+                                    "probability values."
+                                )
+                            else:
+                                tn, fp, fn, tp = confusion_matrix(
+                                    y_external,
+                                    external_predictions,
+                                    labels=[0, 1],
+                                ).ravel()
+
+                                sensitivity = (
+                                    tp / (tp + fn)
+                                    if tp + fn else 0.0
+                                )
+                                specificity = (
+                                    tn / (tn + fp)
+                                    if tn + fp else 0.0
+                                )
+
+                                metrics = {
+                                    "Accuracy": accuracy_score(
+                                        y_external,
+                                        external_predictions,
+                                    ),
+                                    "Balanced accuracy":
+                                        balanced_accuracy_score(
+                                            y_external,
+                                            external_predictions,
+                                        ),
+                                    "Precision": precision_score(
+                                        y_external,
+                                        external_predictions,
+                                        zero_division=0,
+                                    ),
+                                    "Sensitivity": sensitivity,
+                                    "Specificity": specificity,
+                                    "F1 score": f1_score(
+                                        y_external,
+                                        external_predictions,
+                                        zero_division=0,
+                                    ),
+                                    "ROC-AUC": roc_auc_score(
+                                        y_external,
+                                        external_probabilities,
+                                    ),
+                                    "Brier score": brier_score_loss(
+                                        y_external,
+                                        external_probabilities,
+                                    ),
+                                }
+
+                                # Class-stratified bootstrap:
+                                # sample within each actual class to
+                                # preserve both classes in each replicate.
+                                rng = np.random.default_rng(2026)
+                                class_0 = np.flatnonzero(
+                                    y_external == 0
+                                )
+                                class_1 = np.flatnonzero(
+                                    y_external == 1
+                                )
+
+                                bootstrap_values = {
+                                    name: []
+                                    for name in metrics
+                                }
+
+                                for _ in range(1000):
+                                    sampled_indices = np.concatenate([
+                                        rng.choice(
+                                            class_0,
+                                            size=len(class_0),
+                                            replace=True,
+                                        ),
+                                        rng.choice(
+                                            class_1,
+                                            size=len(class_1),
+                                            replace=True,
+                                        ),
+                                    ])
+
+                                    yt = y_external[sampled_indices]
+                                    yp = external_predictions[
+                                        sampled_indices
+                                    ]
+                                    pp = external_probabilities[
+                                        sampled_indices
+                                    ]
+
+                                    bootstrap_metrics = {
+                                        "Accuracy": accuracy_score(
+                                            yt, yp
+                                        ),
+                                        "Balanced accuracy":
+                                            balanced_accuracy_score(
+                                                yt, yp
+                                            ),
+                                        "Precision": precision_score(
+                                            yt, yp,
+                                            zero_division=0,
+                                        ),
+                                        "Sensitivity": recall_score(
+                                            yt, yp,
+                                            zero_division=0,
+                                        ),
+                                        "Specificity": (
+                                            confusion_matrix(
+                                                yt, yp, labels=[0, 1]
+                                            )[0, 0]
+                                            / len(yt[yt == 0])
+                                        ),
+                                        "F1 score": f1_score(
+                                            yt, yp,
+                                            zero_division=0,
+                                        ),
+                                        "ROC-AUC": roc_auc_score(
+                                            yt, pp
+                                        ),
+                                        "Brier score": brier_score_loss(
+                                            yt, pp
+                                        ),
+                                    }
+
+                                    for name, value in (
+                                        bootstrap_metrics.items()
+                                    ):
+                                        bootstrap_values[name].append(
+                                            value
+                                        )
+
+                                ci_rows = []
+
+                                for name, value in metrics.items():
+                                    lower, upper = np.percentile(
+                                        bootstrap_values[name],
+                                        [2.5, 97.5],
+                                    )
+                                    ci_rows.append({
+                                        "Metric": name,
+                                        "Estimate": value,
+                                        "95% CI lower": lower,
+                                        "95% CI upper": upper,
+                                    })
+
+                                ci_df = pd.DataFrame(ci_rows)
+
+                                st.subheader(
+                                    "Validation Results"
+                                )
+
+                                st.write(
+                                    f"Dataset source: "
+                                    f"{external_source.strip() or 'Not supplied'}"
+                                )
+
+                                st.write(
+                                    f"Records evaluated: "
+                                    f"{len(y_external)}"
+                                )
+
+                                st.write(
+                                    f"Class 0: {len(class_0)} | "
+                                    f"Class 1: {len(class_1)}"
+                                )
+
+                                st.dataframe(
+                                    ci_df.style.format({
+                                        "Estimate": "{:.3f}",
+                                        "95% CI lower": "{:.3f}",
+                                        "95% CI upper": "{:.3f}",
+                                    }),
+                                    use_container_width=True,
+                                    hide_index=True,
+                                )
+
+                                st.caption(
+                                    "Intervals are percentile intervals "
+                                    "from 1,000 class-stratified bootstrap "
+                                    "replicates. They reflect sampling "
+                                    "variation under this procedure, not "
+                                    "all sources of uncertainty. Small "
+                                    "datasets can produce unstable estimates."
+                                )
+
+                                st.subheader(
+                                    "External Dataset ROC Curve"
+                                )
+
+                                fpr, tpr, _ = roc_curve(
+                                    y_external,
+                                    external_probabilities,
+                                )
+
+                                roc_fig = go.Figure()
+
+                                roc_fig.add_trace(
+                                    go.Scatter(
+                                        x=fpr,
+                                        y=tpr,
+                                        mode="lines",
+                                        name=(
+                                            "ROC-AUC = "
+                                            f"{metrics['ROC-AUC']:.3f}"
+                                        ),
+                                        line=dict(
+                                            color="#5fffe9",
+                                            width=3,
+                                        ),
+                                    )
+                                )
+
+                                roc_fig.add_trace(
+                                    go.Scatter(
+                                        x=[0, 1],
+                                        y=[0, 1],
+                                        mode="lines",
+                                        name="Chance reference",
+                                        line=dict(
+                                            dash="dash",
+                                            color="#9fb0c0",
+                                        ),
+                                    )
+                                )
+
+                                roc_fig.update_layout(
+                                    template="plotly_dark",
+                                    paper_bgcolor="rgba(0,0,0,0)",
+                                    plot_bgcolor="rgba(0,0,0,0)",
+                                    xaxis_title="False Positive Rate",
+                                    yaxis_title="True Positive Rate",
+                                    xaxis=dict(range=[0, 1]),
+                                    yaxis=dict(range=[0, 1.02]),
+                                    height=420,
+                                )
+
+                                st.plotly_chart(
+                                    roc_fig,
+                                    use_container_width=True,
+                                )
+
+                                st.subheader(
+                                    "Download Validation Results"
+                                )
+
+                                results_df = X_external.copy()
+                                results_df["y_true"] = y_external
+                                results_df["y_pred"] = (
+                                    external_predictions
+                                )
+                                results_df["prob_class_1"] = (
+                                    external_probabilities
+                                )
+
+                                st.download_button(
+                                    "Download predictions CSV",
+                                    data=results_df.to_csv(
+                                        index=False
+                                    ).encode("utf-8"),
+                                    file_name=(
+                                        "AfriHealth_Validation_Predictions.csv"
+                                    ),
+                                    mime="text/csv",
+                                )
+
+                                st.download_button(
+                                    "Download metrics and confidence intervals",
+                                    data=ci_df.to_csv(
+                                        index=False
+                                    ).encode("utf-8"),
+                                    file_name=(
+                                        "AfriHealth_Validation_Metrics.csv"
+                                    ),
+                                    mime="text/csv",
+                                )
+
+                                st.warning(
+                                    "This is an evaluation of the uploaded "
+                                    "dataset. Call it external validation "
+                                    "only after confirming dataset "
+                                    "independence, provenance, appropriate "
+                                    "permissions, and compatible feature "
+                                    "definitions. It does not establish "
+                                    "clinical validity or suitability "
+                                    "for medical decisions."
+                                )
+
+        except Exception as error:
+            st.error(
+                "Validation could not be completed. Check the CSV "
+                "schema, feature coding, target labels, and model "
+                "compatibility."
+            )
+            st.caption(str(error))
+            
+# ============================================================
 # FOOTER
 # ============================================================
 
