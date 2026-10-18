@@ -607,7 +607,294 @@ else:
     except Exception as error:
         st.error("The evaluation dashboard could not load the CSV.")
         st.exception(error)
-        
+
+
+# ============================================================
+# BUILD 04B - MODEL EXPLAINABILITY
+# ============================================================
+
+st.divider()
+st.header("🔎 Model Explainability")
+
+st.write(
+    "Explore which transformed input features influence the "
+    "Logistic Regression model and how they contribute to an "
+    "individual model output."
+)
+
+st.caption(
+    "These explanations describe model behaviour, not medical "
+    "causes. Coefficient magnitudes depend on preprocessing and "
+    "feature encoding."
+)
+
+try:
+    # Extract the final estimator and preprocessing pipeline.
+    if not hasattr(model, "steps") or len(model.steps) < 2:
+        raise ValueError(
+            "The loaded model is not a supported preprocessing pipeline."
+        )
+
+    estimator = model.steps[-1][1]
+    preprocessing = model[:-1]
+
+    if not hasattr(estimator, "coef_"):
+        raise ValueError(
+            "This model does not expose coefficients. "
+            "Coefficient-based explanations require a compatible estimator."
+        )
+
+    if not hasattr(preprocessing, "get_feature_names_out"):
+        raise ValueError(
+            "The preprocessing pipeline cannot provide transformed feature names."
+        )
+
+    transformed_names = preprocessing.get_feature_names_out()
+    classes = list(estimator.classes_)
+
+    if 1 not in classes:
+        raise ValueError(
+            "The model does not contain the expected positive class 1."
+        )
+
+    # For binary Logistic Regression, coef_ represents classes_[1].
+    coefficients = np.asarray(estimator.coef_)
+
+    if coefficients.shape[0] != 1 or len(classes) != 2:
+        raise ValueError(
+            "This explanation block currently supports binary Logistic Regression."
+        )
+
+    class_1_index = classes.index(1)
+    coef_class_1 = (
+        coefficients[0]
+        if class_1_index == 1
+        else -coefficients[0]
+    )
+
+    if len(transformed_names) != len(coef_class_1):
+        raise ValueError(
+            "Feature names and model coefficients have different lengths."
+        )
+
+    importance_df = pd.DataFrame({
+        "Feature": [
+            str(name).replace("__", " / ")
+            for name in transformed_names
+        ],
+        "Coefficient": coef_class_1,
+        "Absolute coefficient": np.abs(coef_class_1),
+    })
+
+    importance_df = importance_df.sort_values(
+        "Absolute coefficient",
+        ascending=False,
+    )
+
+    with st.expander("How to read these explanations"):
+        st.markdown(
+            """
+            - **Global view:** ranks transformed features by the
+              absolute size of their learned coefficients.
+            - **Positive coefficient:** pushes the model's class-1
+              log-odds upward when the transformed feature increases.
+            - **Negative coefficient:** pushes class-1 log-odds downward
+              when the transformed feature increases.
+            - **Local view:** shows the signed contributions for the
+              submitted record, relative to the model's intercept.
+            """
+        )
+        st.caption(
+            "Categorical variables may be represented by multiple "
+            "encoded columns. Coefficients are not causal effects."
+        )
+
+    # GLOBAL EXPLANATION
+    st.subheader("1. Global Feature Influence")
+
+    st.write(
+        "These are the 15 transformed features with the largest "
+        "absolute Logistic Regression coefficients."
+    )
+
+    top_global = importance_df.head(15).sort_values(
+        "Absolute coefficient",
+        ascending=True,
+    )
+
+    global_fig = go.Figure(
+        go.Bar(
+            x=top_global["Absolute coefficient"],
+            y=top_global["Feature"],
+            orientation="h",
+            marker_color="#16c7b7",
+            hovertemplate=(
+                "Feature: %{y}<br>"
+                "Absolute coefficient: %{x:.4f}<extra></extra>"
+            ),
+        )
+    )
+
+    global_fig.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        xaxis_title="Absolute coefficient magnitude",
+        yaxis_title="Transformed feature",
+        height=520,
+        margin=dict(l=20, r=20, t=20, b=40),
+    )
+
+    st.plotly_chart(global_fig, use_container_width=True)
+
+    st.dataframe(
+        importance_df.head(15)[
+            ["Feature", "Coefficient", "Absolute coefficient"]
+        ].style.format({
+            "Coefficient": "{:.4f}",
+            "Absolute coefficient": "{:.4f}",
+        }),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.caption(
+        "This ranks coefficient magnitude, not clinical importance "
+        "or the strength of a causal relationship. Correlated features "
+        "and encoding choices can affect the ranking."
+    )
+
+    # INDIVIDUAL EXPLANATION
+    st.subheader("2. Individual Prediction Explanation")
+
+    if submitted and "input_data" in locals():
+
+        transformed_input = preprocessing.transform(input_data)
+
+        if hasattr(transformed_input, "toarray"):
+            transformed_input = transformed_input.toarray()
+
+        transformed_row = np.asarray(transformed_input)[0]
+
+        contributions = transformed_row * coef_class_1
+
+        intercept = float(np.asarray(estimator.intercept_).ravel()[0])
+
+        if class_1_index == 0:
+            intercept = -intercept
+
+        local_df = pd.DataFrame({
+            "Feature": [
+                str(name).replace("__", " / ")
+                for name in transformed_names
+            ],
+            "Contribution": contributions,
+        })
+
+        local_df["Absolute contribution"] = np.abs(
+            local_df["Contribution"]
+        )
+
+        local_df = local_df.sort_values(
+            "Absolute contribution",
+            ascending=False,
+        )
+
+        st.write(
+            "The chart shows which transformed input features "
+            "contributed most to the model's class-1 log-odds "
+            "for the submitted record."
+        )
+
+        top_local = local_df.head(12).copy()
+        top_local = top_local.sort_values("Contribution")
+
+        top_local["Direction"] = np.where(
+            top_local["Contribution"] >= 0,
+            "Pushes towards class 1",
+            "Pushes away from class 1",
+        )
+
+        local_fig = go.Figure(
+            go.Bar(
+                x=top_local["Contribution"],
+                y=top_local["Feature"],
+                orientation="h",
+                marker_color=[
+                    "#ff8c69" if value >= 0 else "#16c7b7"
+                    for value in top_local["Contribution"]
+                ],
+                customdata=top_local[["Direction"]].to_numpy(),
+                hovertemplate=(
+                    "Feature: %{y}<br>"
+                    "Contribution: %{x:.4f}<br>"
+                    "%{customdata[0]}<extra></extra>"
+                ),
+            )
+        )
+
+        local_fig.add_vline(
+            x=0,
+            line_dash="dash",
+            line_color="#9fb0c0",
+        )
+
+        local_fig.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            xaxis_title="Contribution to class-1 log-odds",
+            yaxis_title="Transformed feature",
+            height=480,
+            margin=dict(l=20, r=20, t=20, b=40),
+        )
+
+        st.plotly_chart(local_fig, use_container_width=True)
+
+        st.caption(
+            "Positive contributions increase class-1 log-odds; "
+            "negative contributions decrease them. These values are "
+            "not percentage points or individual medical risk factors."
+        )
+
+        with st.expander("View contribution details"):
+            st.dataframe(
+                local_df[
+                    ["Feature", "Contribution", "Absolute contribution"]
+                ].style.format({
+                    "Contribution": "{:.4f}",
+                    "Absolute contribution": "{:.4f}",
+                }),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+        st.metric(
+            "Model intercept for class-1 log-odds",
+            f"{intercept:.4f}",
+        )
+
+        st.caption(
+            "For binary Logistic Regression, the intercept plus all "
+            "feature contributions reconstructs the class-1 log-odds "
+            "before applying the logistic function. Contributions depend "
+            "on the pipeline's scaling and encoding."
+        )
+
+    else:
+        st.info(
+            "Submit the Research Input form above to view an "
+            "individual prediction explanation."
+        )
+
+except Exception as error:
+    st.warning(
+        "The explainability section could not be generated for this "
+        "model pipeline. Your prediction and evaluation sections "
+        "can still be used."
+    )
+    st.caption(f"Technical detail: {error}")
+    
 # ============================================================
 # MODEL INFORMATION
 # ============================================================
