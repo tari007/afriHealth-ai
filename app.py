@@ -610,6 +610,219 @@ else:
 
 
 # ============================================================
+# BUILD 05A - MODEL RELIABILITY AND VALIDATION
+# ============================================================
+
+from sklearn.metrics import (
+    brier_score_loss,
+    balanced_accuracy_score,
+    classification_report,
+    confusion_matrix,
+    roc_auc_score,
+)
+from sklearn.calibration import calibration_curve
+
+st.divider()
+st.header("🛡️ Model Reliability and Validation")
+
+st.write(
+    "These checks describe the model's performance on the "
+    "available holdout dataset. They do not establish clinical "
+    "validity or performance on Nigerian or other African populations."
+)
+
+reliability_path = BASE_DIR / "evaluation_predictions.csv"
+
+if not reliability_path.exists():
+    st.warning(
+        "Add evaluation_predictions.csv to the repository root "
+        "to enable reliability checks."
+    )
+else:
+    try:
+        reliability_df = pd.read_csv(reliability_path)
+
+        needed = {"y_true", "y_pred", "prob_class_1"}
+        if not needed.issubset(reliability_df.columns):
+            raise ValueError(
+                "The CSV must contain y_true, y_pred, and prob_class_1."
+            )
+
+        actual = pd.to_numeric(
+            reliability_df["y_true"], errors="raise"
+        ).to_numpy(dtype=int)
+
+        predicted = pd.to_numeric(
+            reliability_df["y_pred"], errors="raise"
+        ).to_numpy(dtype=int)
+
+        probability = pd.to_numeric(
+            reliability_df["prob_class_1"], errors="raise"
+        ).to_numpy(dtype=float)
+
+        if len(actual) == 0:
+            raise ValueError("The evaluation dataset is empty.")
+
+        if not (
+            len(actual) == len(predicted) == len(probability)
+        ):
+            raise ValueError("Evaluation columns have different lengths.")
+
+        if not np.isin(actual, [0, 1]).all():
+            raise ValueError("Actual labels must be 0 or 1.")
+
+        if not np.isin(predicted, [0, 1]).all():
+            raise ValueError("Predicted labels must be 0 or 1.")
+
+        if not np.isfinite(probability).all():
+            raise ValueError("Probabilities must be finite numbers.")
+
+        if ((probability < 0) | (probability > 1)).any():
+            raise ValueError("Probabilities must be between 0 and 1.")
+
+        if len(np.unique(actual)) < 2:
+            st.warning(
+                "Both actual classes are required for the full set "
+                "of reliability checks."
+            )
+        else:
+            tn, fp, fn, tp = confusion_matrix(
+                actual, predicted, labels=[0, 1]
+            ).ravel()
+
+            sensitivity = tp / (tp + fn) if (tp + fn) else 0.0
+            specificity = tn / (tn + fp) if (tn + fp) else 0.0
+
+            reliability_cols = st.columns(4)
+
+            reliability_cols[0].metric(
+                "Balanced accuracy",
+                f"{balanced_accuracy_score(actual, predicted):.3f}",
+            )
+            reliability_cols[1].metric(
+                "Sensitivity",
+                f"{sensitivity:.3f}",
+            )
+            reliability_cols[2].metric(
+                "Specificity",
+                f"{specificity:.3f}",
+            )
+            reliability_cols[3].metric(
+                "Brier score",
+                f"{brier_score_loss(actual, probability):.3f}",
+            )
+
+            st.caption(
+                "Sensitivity measures the fraction of class-1 cases "
+                "identified. Specificity measures the fraction of "
+                "class-0 cases identified. Lower Brier scores indicate "
+                "better probability accuracy on this evaluation sample, "
+                "but do not prove that probabilities are calibrated."
+            )
+
+            st.subheader("Probability Calibration Check")
+
+            observed_rate, mean_probability = calibration_curve(
+                actual,
+                probability,
+                n_bins=5,
+                strategy="uniform",
+                pos_label=1,
+            )
+
+            calibration_fig = go.Figure()
+
+            calibration_fig.add_trace(
+                go.Scatter(
+                    x=[0, 1],
+                    y=[0, 1],
+                    mode="lines",
+                    name="Ideal calibration",
+                    line=dict(dash="dash", color="#9fb0c0"),
+                )
+            )
+
+            calibration_fig.add_trace(
+                go.Scatter(
+                    x=mean_probability,
+                    y=observed_rate,
+                    mode="lines+markers",
+                    name="Observed holdout calibration",
+                    line=dict(color="#5fffe9", width=3),
+                    marker=dict(size=9),
+                )
+            )
+
+            calibration_fig.update_layout(
+                template="plotly_dark",
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                xaxis_title="Mean predicted class-1 probability",
+                yaxis_title="Observed class-1 fraction",
+                xaxis=dict(range=[0, 1]),
+                yaxis=dict(range=[0, 1]),
+                height=420,
+            )
+
+            st.plotly_chart(
+                calibration_fig,
+                use_container_width=True,
+            )
+
+            st.caption(
+                "Each point compares average predicted probability "
+                "with the observed class-1 fraction in a probability "
+                "bin. With a small holdout sample, the curve can be "
+                "unstable. This is a diagnostic, not proof of calibration."
+            )
+
+            st.subheader("Classification Details")
+
+            report = classification_report(
+                actual,
+                predicted,
+                labels=[0, 1],
+                target_names=[
+                    "Class 0",
+                    "Class 1",
+                ],
+                output_dict=True,
+                zero_division=0,
+            )
+
+            report_df = pd.DataFrame(report).transpose()
+
+            st.dataframe(
+                report_df.style.format("{:.3f}"),
+                use_container_width=True,
+            )
+
+            st.subheader("Validation Limitations")
+
+            st.markdown(
+                """
+                - The evaluation uses a limited holdout sample from
+                  the UCI Heart Disease dataset.
+                - Results can change with a different sample or split.
+                - Calibration on this dataset may not transfer to other
+                  hospitals, countries, or populations.
+                - No independent Nigerian or African validation has
+                  been established by these checks.
+                - The output is not a diagnosis and should not be used
+                  to make treatment decisions.
+                """
+            )
+
+            st.success(
+                f"Reliability checks completed for {len(actual)} "
+                "holdout records."
+            )
+
+    except Exception as error:
+        st.error("Reliability checks could not be completed.")
+        st.caption(str(error))
+        
+# ============================================================
 # BUILD 04B - MODEL EXPLAINABILITY
 # ============================================================
 
