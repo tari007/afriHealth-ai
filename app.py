@@ -16,7 +16,7 @@ from sklearn.metrics import (
     roc_curve,
     roc_auc_score,
 )
-
+from sklearn.calibration import calibration_curve
 
 # ============================================================
 # PAGE CONFIGURATION
@@ -566,6 +566,61 @@ else:
                 "cross-validation ROC-AUC shown in the project metadata."
             )
 
+        
+# External validation calibration plot
+st.subheader("Probability Calibration")
+
+observed, predicted_mean = calibration_curve(
+    y_external,
+    external_probabilities,
+    n_bins=5,
+    strategy="quantile",
+    pos_label=1,
+)
+
+calibration_fig = go.Figure()
+
+calibration_fig.add_trace(
+    go.Scatter(
+        x=[0, 1],
+        y=[0, 1],
+        mode="lines",
+        name="Ideal calibration",
+        line=dict(dash="dash", color="#9fb0c0"),
+    )
+)
+
+calibration_fig.add_trace(
+    go.Scatter(
+        x=predicted_mean,
+        y=observed,
+        mode="lines+markers",
+        name="Observed calibration",
+        line=dict(color="#5fffe9", width=3),
+    )
+)
+
+calibration_fig.update_layout(
+    template="plotly_dark",
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+    xaxis_title="Mean predicted class-1 probability",
+    yaxis_title="Observed class-1 fraction",
+    xaxis=dict(range=[0, 1]),
+    yaxis=dict(range=[0, 1]),
+    height=420,
+)
+
+st.plotly_chart(
+    calibration_fig,
+    use_container_width=True,
+)
+
+st.caption(
+    "Calibration is assessed on the uploaded dataset. The plot "
+    "can be unstable with small samples and does not establish "
+    "clinical validity."
+)
         # Evaluation table
         st.markdown("### Evaluation Summary")
 
