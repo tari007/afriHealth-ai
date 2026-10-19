@@ -566,6 +566,81 @@ else:
                 "cross-validation ROC-AUC shown in the project metadata."
             )
 
+
+                                # BUILD 06B - EXTERNAL PROBABILITY CALIBRATION
+
+                                st.subheader(
+                                    "External Probability Calibration"
+                                )
+
+                                observed_rate, mean_probability = (
+                                    calibration_curve(
+                                        y_external,
+                                        external_probabilities,
+                                        n_bins=5,
+                                        strategy="quantile",
+                                        pos_label=1,
+                                    )
+                                )
+
+                                calibration_fig = go.Figure()
+
+                                calibration_fig.add_trace(
+                                    go.Scatter(
+                                        x=[0, 1],
+                                        y=[0, 1],
+                                        mode="lines",
+                                        name="Ideal calibration",
+                                        line=dict(
+                                            dash="dash",
+                                            color="#9fb0c0",
+                                        ),
+                                    )
+                                )
+
+                                calibration_fig.add_trace(
+                                    go.Scatter(
+                                        x=mean_probability,
+                                        y=observed_rate,
+                                        mode="lines+markers",
+                                        name="Observed calibration",
+                                        line=dict(
+                                            color="#5fffe9",
+                                            width=3,
+                                        ),
+                                        marker=dict(size=9),
+                                    )
+                                )
+
+                                calibration_fig.update_layout(
+                                    template="plotly_dark",
+                                    paper_bgcolor="rgba(0,0,0,0)",
+                                    plot_bgcolor="rgba(0,0,0,0)",
+                                    xaxis_title=(
+                                        "Mean predicted class-1 probability"
+                                    ),
+                                    yaxis_title=(
+                                        "Observed class-1 fraction"
+                                    ),
+                                    xaxis=dict(range=[0, 1]),
+                                    yaxis=dict(range=[0, 1]),
+                                    height=420,
+                                )
+
+                                st.plotly_chart(
+                                    calibration_fig,
+                                    use_container_width=True,
+                                )
+
+                                st.caption(
+                                    "This chart compares predicted "
+                                    "probabilities with observed class-1 "
+                                    "frequencies in the uploaded dataset. "
+                                    "With small samples, the curve may be "
+                                    "unstable. It does not establish "
+                                    "clinical validity or prove that "
+                                    "probabilities are calibrated."
+                                )
         
 # External validation calibration plot
 st.subheader("Probability Calibration")
