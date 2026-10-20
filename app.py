@@ -1,7 +1,7 @@
-
+import io
 import json
-from io import BytesIO
-from pathlib import Path
+import os
+from datetime import datetime
 
 import joblib
 import numpy as np
@@ -24,42 +24,89 @@ from sklearn.metrics import (
 )
 
 # ============================================================
-# 1. CONFIGURATION
+# OPTIONAL PDF SUPPORT
+# ============================================================
+
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER
+    from reportlab.lib.units import inch
+    from reportlab.platypus import (
+        SimpleDocTemplate,
+        Paragraph,
+        Spacer,
+        Table,
+        TableStyle,
+        PageBreak,
+    )
+
+    REPORTLAB_AVAILABLE = True
+
+except ImportError:
+    REPORTLAB_AVAILABLE = False
+
+
+# ============================================================
+# PAGE CONFIGURATION
 # ============================================================
 
 st.set_page_config(
     page_title="AfriHealth AI",
-    page_icon="🫀",
+    page_icon="🩺",
     layout="wide",
-    initial_sidebar_state="collapsed",
+    initial_sidebar_state="expanded",
 )
 
-BASE_DIR = Path(__file__).resolve().parent
-MODEL_PATH = BASE_DIR / "afrihealth_model.joblib"
-METADATA_PATH = BASE_DIR / "model_metadata.json"
-EVALUATION_PATH = BASE_DIR / "evaluation_predictions.csv"
 
-FEATURES = [
-    "age", "sex", "cp", "trestbps", "chol", "fbs",
-    "restecg", "thalach", "exang", "oldpeak",
-    "slope", "ca", "thal",
+# ============================================================
+# CONSTANTS
+# ============================================================
+
+MODEL_FILE = "afrihealth_model.joblib"
+METADATA_FILE = "model_metadata.json"
+EVALUATION_FILE = "evaluation_predictions.csv"
+
+DEFAULT_FEATURES = [
+    "age",
+    "sex",
+    "cp",
+    "trestbps",
+    "chol",
+    "fbs",
+    "restecg",
+    "thalach",
+    "exang",
+    "oldpeak",
+    "slope",
+    "ca",
+    "thal",
 ]
 
-FEATURE_DESCRIPTIONS = [
-    "Age",
-    "Sex coding",
-    "Chest pain type",
-    "Resting blood pressure",
-    "Serum cholesterol",
-    "Fasting blood sugar",
-    "Resting ECG",
-    "Maximum heart rate",
-    "Exercise-induced angina",
-    "ST depression",
-    "ST segment slope",
-    "Major vessels",
-    "Thalassemia",
-]
+EXPECTED_FEATURE_RANGES = {
+    "age": (0, 120),
+    "sex": (0, 1),
+    "cp": (1, 4),
+    "trestbps": (50, 300),
+    "chol": (50, 700),
+    "fbs": (0, 1),
+    "restecg": (0, 2),
+    "thalach": (50, 250),
+    "exang": (0, 1),
+    "oldpeak": (0, 10),
+    "slope": (1, 3),
+    "ca": (0, 3),
+    "thal": (3, 7),
+}
+
+MODEL_NAME = "AfriHealth AI"
+APP_VERSION = "Build 06A / Research Validation"
+
+
+# ============================================================
+# CUSTOM CSS
+# ============================================================
 
 st.markdown(
     """
@@ -67,12 +114,45 @@ st.markdown(
     .main-title {
         font-size: 2.6rem;
         font-weight: 800;
-        letter-spacing: -1px;
+        margin-bottom: 0.2rem;
     }
+
     .subtitle {
-        color: #16c7b7;
-        font-size: 1.1rem;
-        margin-bottom: 1rem;
+        font-size: 1.05rem;
+        color: #5f6b7a;
+        margin-bottom: 1.2rem;
+    }
+
+    .metric-card {
+        padding: 1rem;
+        border-radius: 12px;
+        border: 1px solid rgba(128, 128, 128, 0.25);
+        background: rgba(128, 128, 128, 0.04);
+        margin-bottom: 0.5rem;
+    }
+
+    .research-note {
+        padding: 1rem;
+        border-left: 5px solid #0f766e;
+        background: rgba(15, 118, 110, 0.07);
+        border-radius: 5px;
+        margin: 1rem 0;
+    }
+
+    .warning-note {
+        padding: 1rem;
+        border-left: 5px solid #d97706;
+        background: rgba(217, 119, 6, 0.08);
+        border-radius: 5px;
+        margin: 1rem 0;
+    }
+
+    .danger-note {
+        padding: 1rem;
+        border-left: 5px solid #dc2626;
+        background: rgba(220, 38, 38, 0.08);
+        border-radius: 5px;
+        margin: 1rem 0;
     }
     </style>
     """,
@@ -81,571 +161,1107 @@ st.markdown(
 
 
 # ============================================================
-# 2. LOAD MODEL AND METADATA
+# HELPER FUNCTIONS
 # ============================================================
 
 @st.cache_resource
 def load_model():
-    if not MODEL_PATH.is_file():
-        raise FileNotFoundError(
-            "afrihealth_model.joblib is missing from the repository root."
-        )
-    return joblib.load(MODEL_PATH)
+    if not os.path.exists(MODEL_FILE):
+        return None
+
+    return joblib.load(MODEL_FILE)
 
 
 @st.cache_data
 def load_metadata():
-    if not METADATA_PATH.is_file():
+    if not os.path.exists(METADATA_FILE):
         return {}
-    with open(METADATA_PATH, "r", encoding="utf-8") as file:
-        return json.load(file)
+
+    try:
+        with open(METADATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
 
 
-try:
-    model = load_model()
-    metadata = load_metadata()
-except Exception as error:
-    st.error("AfriHealth AI could not load its model.")
-    st.code(str(error))
-    st.stop()
+@st.cache_data
+def load_evaluation_data():
+    if not os.path.exists(EVALUATION_FILE):
+        return None
 
-if not hasattr(model, "predict"):
-    st.error("The saved model does not support predictions.")
-    st.stop()
-
-model_features = list(
-    metadata.get("input_features", FEATURES)
-)
-
-if model_features != FEATURES:
-    st.error(
-        "The input_features list in model_metadata.json does not "
-        "match the feature order expected by this application."
-    )
-    st.stop()
-
-try:
-    model_classes = list(model.classes_)
-except Exception:
-    model_classes = []
-
-if not {0, 1}.issubset(set(model_classes)):
-    st.error(
-        "The saved model must support binary classes 0 and 1."
-    )
-    st.stop()
+    try:
+        return pd.read_csv(EVALUATION_FILE)
+    except Exception:
+        return None
 
 
-# ============================================================
-# 3. SHARED HELPER FUNCTIONS
-# ============================================================
+def get_probability_for_class_1(model, X):
+    """
+    Return probability of target class 1.
 
-def safe_metric(actual, predicted):
-    return {
-        "Accuracy": accuracy_score(actual, predicted),
+    For a standard binary classifier:
+        classes_ = [0, 1]
+        probability column 1 corresponds to class 1.
+
+    The function also handles models whose classes are ordered
+    differently.
+    """
+
+    if not hasattr(model, "predict_proba"):
+        raise ValueError("The loaded model does not provide predict_proba().")
+
+    probabilities = model.predict_proba(X)
+
+    if probabilities.ndim != 2:
+        raise ValueError("Unexpected probability output shape.")
+
+    classes = getattr(model, "classes_", None)
+
+    if classes is None:
+        if probabilities.shape[1] != 2:
+            raise ValueError("Binary class probabilities could not be identified.")
+        return probabilities[:, 1]
+
+    classes = np.asarray(classes)
+
+    matches = np.where(classes == 1)[0]
+
+    if len(matches) != 1:
+        raise ValueError(
+            f"Could not identify class 1 in model classes: {classes.tolist()}"
+        )
+
+    return probabilities[:, matches[0]]
+
+
+def get_binary_predictions(model, X):
+    """
+    Obtain predictions and normalize them to binary 0/1.
+    """
+
+    predictions = model.predict(X)
+    predictions = np.asarray(predictions)
+
+    unique_values = np.unique(predictions)
+
+    if not set(unique_values).issubset({0, 1}):
+        raise ValueError(
+            "The model returned non-binary predictions: "
+            f"{unique_values.tolist()}"
+        )
+
+    return predictions.astype(int)
+
+
+def calculate_metrics(y_true, y_pred, probabilities):
+    """
+    Calculate all major binary classification metrics from exactly
+    the same y_true, y_pred and probability arrays.
+    """
+
+    y_true = np.asarray(y_true).astype(int)
+    y_pred = np.asarray(y_pred).astype(int)
+    probabilities = np.asarray(probabilities).astype(float)
+
+    metrics = {
+        "Accuracy": accuracy_score(y_true, y_pred),
+        "Balanced Accuracy": balanced_accuracy_score(y_true, y_pred),
+        "Sensitivity": recall_score(
+            y_true,
+            y_pred,
+            pos_label=1,
+            zero_division=0,
+        ),
+        "Specificity": recall_score(
+            y_true,
+            y_pred,
+            pos_label=0,
+            zero_division=0,
+        ),
         "Precision": precision_score(
-            actual, predicted, zero_division=0
+            y_true,
+            y_pred,
+            pos_label=1,
+            zero_division=0,
         ),
-        "Recall / Sensitivity": recall_score(
-            actual, predicted, zero_division=0
+        "F1 Score": f1_score(
+            y_true,
+            y_pred,
+            pos_label=1,
+            zero_division=0,
         ),
-        "F1 score": f1_score(
-            actual, predicted, zero_division=0
-        ),
-        "Balanced accuracy": balanced_accuracy_score(
-            actual, predicted
-        ),
+        "ROC-AUC": roc_auc_score(y_true, probabilities),
+        "Brier Score": brier_score_loss(y_true, probabilities),
     }
 
+    return metrics
 
-def validate_evaluation_data(data):
-    required = {"y_true", "y_pred", "prob_class_1"}
 
-    if not required.issubset(data.columns):
-        missing = required - set(data.columns)
-        raise ValueError(
-            "Missing evaluation columns: "
-            + ", ".join(sorted(missing))
+def bootstrap_metric_ci(
+    y_true,
+    y_pred,
+    probabilities,
+    metric_name,
+    n_bootstrap=1000,
+    random_state=42,
+):
+    """
+    Class-stratified bootstrap confidence interval.
+
+    Each bootstrap sample preserves the original number of Class 0
+    and Class 1 records.
+    """
+
+    y_true = np.asarray(y_true).astype(int)
+    y_pred = np.asarray(y_pred).astype(int)
+    probabilities = np.asarray(probabilities).astype(float)
+
+    class_0_indices = np.where(y_true == 0)[0]
+    class_1_indices = np.where(y_true == 1)[0]
+
+    if len(class_0_indices) == 0 or len(class_1_indices) == 0:
+        return np.nan, np.nan
+
+    rng = np.random.default_rng(random_state)
+
+    values = []
+
+    for _ in range(n_bootstrap):
+
+        sample_0 = rng.choice(
+            class_0_indices,
+            size=len(class_0_indices),
+            replace=True,
         )
 
-    if data.empty:
-        raise ValueError("The evaluation CSV is empty.")
-
-    actual = pd.to_numeric(
-        data["y_true"], errors="raise"
-    ).to_numpy(dtype=float)
-
-    predicted = pd.to_numeric(
-        data["y_pred"], errors="raise"
-    ).to_numpy(dtype=float)
-
-    probabilities = pd.to_numeric(
-        data["prob_class_1"], errors="raise"
-    ).to_numpy(dtype=float)
-
-    if not (
-        len(actual) == len(predicted) == len(probabilities)
-    ):
-        raise ValueError("Evaluation columns have different lengths.")
-
-    if not (
-        np.isfinite(actual).all()
-        and np.isfinite(predicted).all()
-        and np.isfinite(probabilities).all()
-    ):
-        raise ValueError("Evaluation data contains invalid numbers.")
-
-    if not np.isin(actual, [0, 1]).all():
-        raise ValueError("Actual labels must be 0 or 1.")
-
-    if not np.isin(predicted, [0, 1]).all():
-        raise ValueError("Predicted labels must be 0 or 1.")
-
-    if ((probabilities < 0) | (probabilities > 1)).any():
-        raise ValueError("Probabilities must be between 0 and 1.")
-
-    return actual.astype(int), predicted.astype(int), probabilities
-
-
-def make_confusion_matrix_figure(actual, predicted):
-    matrix = confusion_matrix(
-        actual, predicted, labels=[0, 1]
-    )
-
-    figure = go.Figure(
-        data=go.Heatmap(
-            z=matrix,
-            x=["Predicted 0", "Predicted 1"],
-            y=["Actual 0", "Actual 1"],
-            colorscale=[
-                [0, "#102235"],
-                [0.5, "#087f8c"],
-                [1, "#5fffe9"],
-            ],
-            text=matrix,
-            texttemplate="%{text}",
-            textfont={"size": 18, "color": "white"},
-            showscale=False,
+        sample_1 = rng.choice(
+            class_1_indices,
+            size=len(class_1_indices),
+            replace=True,
         )
+
+        sample_indices = np.concatenate([sample_0, sample_1])
+
+        y_b = y_true[sample_indices]
+        pred_b = y_pred[sample_indices]
+        prob_b = probabilities[sample_indices]
+
+        try:
+            if metric_name == "Accuracy":
+                value = accuracy_score(y_b, pred_b)
+
+            elif metric_name == "Balanced Accuracy":
+                value = balanced_accuracy_score(y_b, pred_b)
+
+            elif metric_name == "Sensitivity":
+                value = recall_score(
+                    y_b,
+                    pred_b,
+                    pos_label=1,
+                    zero_division=0,
+                )
+
+            elif metric_name == "Specificity":
+                value = recall_score(
+                    y_b,
+                    pred_b,
+                    pos_label=0,
+                    zero_division=0,
+                )
+
+            elif metric_name == "Precision":
+                value = precision_score(
+                    y_b,
+                    pred_b,
+                    pos_label=1,
+                    zero_division=0,
+                )
+
+            elif metric_name == "F1 Score":
+                value = f1_score(
+                    y_b,
+                    pred_b,
+                    pos_label=1,
+                    zero_division=0,
+                )
+
+            elif metric_name == "ROC-AUC":
+                value = roc_auc_score(y_b, prob_b)
+
+            elif metric_name == "Brier Score":
+                value = brier_score_loss(y_b, prob_b)
+
+            else:
+                continue
+
+            if np.isfinite(value):
+                values.append(value)
+
+        except Exception:
+            continue
+
+    if len(values) < 100:
+        return np.nan, np.nan
+
+    lower = np.percentile(values, 2.5)
+    upper = np.percentile(values, 97.5)
+
+    return float(lower), float(upper)
+
+
+def create_bootstrap_results(
+    y_true,
+    y_pred,
+    probabilities,
+    n_bootstrap=1000,
+):
+    """
+    Generate a complete metric table containing estimate,
+    lower 95% CI and upper 95% CI.
+    """
+
+    estimates = calculate_metrics(
+        y_true,
+        y_pred,
+        probabilities,
     )
 
-    figure.update_layout(
-        template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        xaxis_title="Predicted class",
-        yaxis_title="Actual class",
-        height=380,
+    rows = []
+
+    for metric_name, estimate in estimates.items():
+
+        lower, upper = bootstrap_metric_ci(
+            y_true,
+            y_pred,
+            probabilities,
+            metric_name,
+            n_bootstrap=n_bootstrap,
+        )
+
+        rows.append(
+            {
+                "Metric": metric_name,
+                "Estimate": estimate,
+                "95% CI Lower": lower,
+                "95% CI Upper": upper,
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+def create_roc_figure(y_true, probabilities, title):
+    fpr, tpr, thresholds = roc_curve(
+        y_true,
+        probabilities,
     )
-    return figure
 
-
-def make_roc_figure(actual, probabilities, title="ROC curve"):
-    false_positive, true_positive, _ = roc_curve(
-        actual, probabilities, pos_label=1
+    auc_value = roc_auc_score(
+        y_true,
+        probabilities,
     )
-    auc_value = roc_auc_score(actual, probabilities)
 
-    figure = go.Figure()
+    fig = go.Figure()
 
-    figure.add_trace(
+    fig.add_trace(
         go.Scatter(
-            x=false_positive,
-            y=true_positive,
+            x=fpr,
+            y=tpr,
             mode="lines",
-            name=f"ROC-AUC = {auc_value:.3f}",
-            line={"color": "#5fffe9", "width": 3},
+            name=f"ROC curve (AUC = {auc_value:.3f})",
+            line=dict(width=3),
         )
     )
 
-    figure.add_trace(
+    fig.add_trace(
         go.Scatter(
             x=[0, 1],
             y=[0, 1],
             mode="lines",
-            name="Chance reference",
-            line={
-                "color": "#9fb0c0",
-                "width": 2,
-                "dash": "dash",
-            },
+            name="Chance",
+            line=dict(
+                dash="dash",
+                width=1,
+            ),
         )
     )
 
-    figure.update_layout(
+    fig.update_layout(
         title=title,
-        template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
         xaxis_title="False Positive Rate",
         yaxis_title="True Positive Rate",
-        xaxis={"range": [0, 1]},
-        yaxis={"range": [0, 1.02]},
-        height=420,
+        xaxis=dict(range=[0, 1]),
+        yaxis=dict(range=[0, 1]),
+        height=500,
+        template="plotly_white",
     )
 
-    return figure, auc_value
+    return fig
 
 
-def make_calibration_figure(
-    actual,
-    probabilities,
-    bins=5,
-    strategy="quantile",
-    title="Probability calibration",
-):
-    observed, mean_predicted = calibration_curve(
-        actual,
+def create_calibration_figure(y_true, probabilities, title):
+    fraction_of_positives, mean_predicted_value = calibration_curve(
+        y_true,
         probabilities,
-        n_bins=bins,
-        strategy=strategy,
-        pos_label=1,
+        n_bins=10,
+        strategy="uniform",
     )
 
-    figure = go.Figure()
+    fig = go.Figure()
 
-    figure.add_trace(
+    fig.add_trace(
+        go.Scatter(
+            x=mean_predicted_value,
+            y=fraction_of_positives,
+            mode="lines+markers",
+            name="AfriHealth AI",
+            line=dict(width=3),
+        )
+    )
+
+    fig.add_trace(
         go.Scatter(
             x=[0, 1],
             y=[0, 1],
             mode="lines",
-            name="Ideal calibration",
-            line={"dash": "dash", "color": "#9fb0c0"},
+            name="Perfect calibration",
+            line=dict(
+                dash="dash",
+                width=1,
+            ),
         )
     )
 
-    figure.add_trace(
-        go.Scatter(
-            x=mean_predicted,
-            y=observed,
-            mode="lines+markers",
-            name="Observed calibration",
-            line={"color": "#5fffe9", "width": 3},
-            marker={"size": 9},
-        )
-    )
-
-    figure.update_layout(
+    fig.update_layout(
         title=title,
-        template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        xaxis_title="Mean predicted class-1 probability",
-        yaxis_title="Observed class-1 fraction",
-        xaxis={"range": [0, 1]},
-        yaxis={"range": [0, 1]},
-        height=420,
+        xaxis_title="Mean predicted probability",
+        yaxis_title="Observed proportion",
+        xaxis=dict(range=[0, 1]),
+        yaxis=dict(range=[0, 1]),
+        height=500,
+        template="plotly_white",
     )
 
-    return figure
+    return fig
 
 
-def create_pdf_report(metrics, project_metadata, record_count, report_title):
-    # ReportLab is already included in the project's requirements.txt.
-    from reportlab.lib import colors
-    from reportlab.lib.enums import TA_CENTER
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib.styles import (
-        getSampleStyleSheet,
-        ParagraphStyle,
-    )
-    from reportlab.lib.units import mm
-    from reportlab.platypus import (
-        SimpleDocTemplate,
-        Paragraph,
-        Spacer,
-        Table,
-        TableStyle,
+def interpret_calibration(y_true, probabilities):
+    """
+    Simple descriptive interpretation.
+
+    This is deliberately not presented as a clinical calibration
+    assessment.
+    """
+
+    fraction_of_positives, mean_predicted_value = calibration_curve(
+        y_true,
+        probabilities,
+        n_bins=10,
+        strategy="uniform",
     )
 
-    buffer = BytesIO()
+    if len(fraction_of_positives) < 2:
+        return (
+            "There are not enough populated probability bins to provide "
+            "a meaningful descriptive calibration interpretation."
+        )
+
+    differences = fraction_of_positives - mean_predicted_value
+
+    mean_absolute_difference = float(
+        np.mean(np.abs(differences))
+    )
+
+    if mean_absolute_difference < 0.05:
+        interpretation = "The calibration curve is relatively close to the ideal diagonal."
+    elif mean_absolute_difference < 0.10:
+        interpretation = "The calibration curve shows moderate deviation from the ideal diagonal."
+    else:
+        interpretation = "The calibration curve shows substantial deviation from the ideal diagonal."
+
+    return (
+        f"{interpretation} The average absolute difference between "
+        f"observed proportions and mean predicted probabilities across "
+        f"populated bins is approximately "
+        f"{mean_absolute_difference:.3f}. This is a descriptive assessment "
+        f"and does not establish clinical calibration."
+    )
+
+
+def format_metric(value):
+    if pd.isna(value):
+        return "N/A"
+
+    return f"{value:.3f}"
+
+
+def format_ci(lower, upper):
+    if pd.isna(lower) or pd.isna(upper):
+        return "N/A"
+
+    return f"{lower:.3f}–{upper:.3f}"
+
+
+def make_metrics_download(metrics_df):
+    return metrics_df.to_csv(index=False).encode("utf-8")
+
+
+def make_external_predictions_download(
+    external_df,
+    predictions,
+    probabilities,
+):
+    output = external_df.copy()
+
+    output["predicted_class"] = predictions
+    output["predicted_probability_class_1"] = probabilities
+
+    return output.to_csv(index=False).encode("utf-8")
+
+
+def create_pdf_report(
+    source,
+    n_records,
+    class_0,
+    class_1,
+    metrics_df,
+    calibration_text,
+    constant_features,
+):
+    if not REPORTLAB_AVAILABLE:
+        return None
+
+    buffer = io.BytesIO()
 
     document = SimpleDocTemplate(
         buffer,
         pagesize=A4,
-        rightMargin=18 * mm,
-        leftMargin=18 * mm,
-        topMargin=18 * mm,
-        bottomMargin=18 * mm,
-        title=report_title,
-        author="AfriHealth AI",
+        rightMargin=40,
+        leftMargin=40,
+        topMargin=40,
+        bottomMargin=40,
     )
 
     styles = getSampleStyleSheet()
-    styles.add(
-        ParagraphStyle(
-            name="AfriTitle",
-            parent=styles["Title"],
-            alignment=TA_CENTER,
-            textColor=colors.HexColor("#087f8c"),
-            spaceAfter=12,
+
+    title_style = ParagraphStyle(
+        "CustomTitle",
+        parent=styles["Title"],
+        alignment=TA_CENTER,
+        fontSize=20,
+        leading=24,
+        spaceAfter=12,
+    )
+
+    heading_style = ParagraphStyle(
+        "Heading",
+        parent=styles["Heading2"],
+        fontSize=13,
+        leading=16,
+        spaceBefore=12,
+        spaceAfter=8,
+    )
+
+    body_style = ParagraphStyle(
+        "Body",
+        parent=styles["BodyText"],
+        fontSize=9.5,
+        leading=14,
+        spaceAfter=7,
+    )
+
+    story = []
+
+    story.append(
+        Paragraph(
+            "AfriHealth AI External Validation Report",
+            title_style,
         )
     )
 
-    story = [
-        Paragraph("AfriHealth AI", styles["AfriTitle"]),
-        Paragraph(report_title, styles["Heading2"]),
-        Spacer(1, 8),
+    story.append(
         Paragraph(
-            "Research and educational use only. This report is not "
-            "a medical diagnosis and must not be used to make treatment "
-            "or clinical decisions.",
-            styles["BodyText"],
-        ),
-        Spacer(1, 12),
-        Paragraph("Project Information", styles["Heading2"]),
+            f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}",
+            body_style,
+        )
+    )
+
+    story.append(
+        Paragraph(
+            "<b>Research use only.</b> This report describes model "
+            "performance on an external dataset. It does not establish "
+            "clinical safety, diagnostic validity, or suitability for "
+            "individual patient care.",
+            body_style,
+        )
+    )
+
+    story.append(
+        Paragraph(
+            "1. Dataset Information",
+            heading_style,
+        )
+    )
+
+    dataset_table = Table(
+        [
+            ["Dataset source", source],
+            ["Records evaluated", str(n_records)],
+            ["Class 0", str(class_0)],
+            ["Class 1", str(class_1)],
+        ],
+        colWidths=[150, 350],
+    )
+
+    dataset_table.setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("BACKGROUND", (0, 0), (0, -1), colors.lightgrey),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+            ]
+        )
+    )
+
+    story.append(dataset_table)
+
+    story.append(
+        Paragraph(
+            "2. Performance Results",
+            heading_style,
+        )
+    )
+
+    table_data = [
+        [
+            "Metric",
+            "Estimate",
+            "95% CI",
+        ]
     ]
 
-    project_rows = [
-        ["Project", "AfriHealth AI"],
-        [
-            "Model",
-            str(project_metadata.get("selected_model", "Not recorded")),
-        ],
-        [
-            "Dataset",
-            str(
-                project_metadata.get(
-                    "dataset", "UCI Heart Disease dataset"
-                )
-            ),
-        ],
-        ["Evaluation records", str(record_count)],
-        ["Evaluation basis", "Provided evaluation predictions"],
-        [
-            "Intended use",
-            str(
-                project_metadata.get(
-                    "intended_use",
-                    "Research and educational prototype only.",
-                )
-            ),
-        ],
+    for _, row in metrics_df.iterrows():
+        table_data.append(
+            [
+                row["Metric"],
+                f"{row['Estimate']:.3f}",
+                format_ci(
+                    row["95% CI Lower"],
+                    row["95% CI Upper"],
+                ),
+            ]
+        )
+
+    metrics_table = Table(
+        table_data,
+        colWidths=[180, 100, 150],
+    )
+
+    metrics_table.setStyle(
+        TableStyle(
+            [
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 8.5),
+                ("ALIGN", (1, 1), (-1, -1), "CENTER"),
+            ]
+        )
+    )
+
+    story.append(metrics_table)
+
+    story.append(
+        Paragraph(
+            "3. Calibration",
+            heading_style,
+        )
+    )
+
+    story.append(
+        Paragraph(
+            calibration_text,
+            body_style,
+        )
+    )
+
+    story.append(
+        Paragraph(
+            "4. Data Quality Notes",
+            heading_style,
+        )
+    )
+
+    if constant_features:
+        story.append(
+            Paragraph(
+                "Constant features detected in the external dataset: "
+                + ", ".join(constant_features)
+                + ". These features had no variation in the evaluated "
+                "cohort and should be considered when interpreting "
+                "generalisability.",
+                body_style,
+            )
+        )
+    else:
+        story.append(
+            Paragraph(
+                "No constant features were detected in the external dataset.",
+                body_style,
+            )
+        )
+
+    story.append(
+        Paragraph(
+            "5. Research Limitations",
+            heading_style,
+        )
+    )
+
+    limitations = [
+        "External validation does not establish clinical validity.",
+        "The model was not trained or validated specifically on a Nigerian population.",
+        "Dataset shift may affect model performance across countries, hospitals and patient populations.",
+        "Confidence intervals describe statistical uncertainty within this evaluation sample and do not remove population-level uncertainty.",
+        "Predicted probabilities should not be interpreted as calibrated individual clinical risk without appropriate clinical validation.",
+        "Prospective and appropriately governed Nigerian validation is required before clinical deployment.",
     ]
 
-    project_table = Table(
-        project_rows,
-        colWidths=[48 * mm, 112 * mm],
-        repeatRows=1,
-    )
-    project_table.setStyle(
-        TableStyle([
-            (
-                "BACKGROUND",
-                (0, 0),
-                (0, -1),
-                colors.HexColor("#e7f4f4"),
-            ),
-            ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("PADDING", (0, 0), (-1, -1), 7),
-        ])
-    )
-
-    story.extend([
-        project_table,
-        Spacer(1, 14),
-        Paragraph("Evaluation Metrics", styles["Heading2"]),
-    ])
-
-    metric_rows = [["Metric", "Estimate"]]
-    metric_rows.extend(
-        [[name, f"{float(value):.4f}"] for name, value in metrics.items()]
-    )
-
-    metric_table = Table(
-        metric_rows,
-        colWidths=[80 * mm, 50 * mm],
-        repeatRows=1,
-    )
-    metric_table.setStyle(
-        TableStyle([
-            (
-                "BACKGROUND",
-                (0, 0),
-                (-1, 0),
-                colors.HexColor("#087f8c"),
-            ),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
-            ("PADDING", (0, 0), (-1, -1), 7),
-        ])
-    )
-
-    story.extend([
-        metric_table,
-        Spacer(1, 14),
-        Paragraph("Limitations", styles["Heading2"]),
-        Paragraph(
-            "The results apply only to the dataset evaluated. They do "
-            "not establish performance on independent Nigerian or "
-            "African populations. Calibration does not establish "
-            "clinical validity. The model must not be used for diagnosis, "
-            "treatment, or patient triage.",
-            styles["BodyText"],
-        ),
-        Spacer(1, 8),
-        Paragraph(
-            "Any claim of external validation requires documented "
-            "dataset provenance, independence, suitable permissions, "
-            "compatible feature definitions, and transparent reporting.",
-            styles["BodyText"],
-        ),
-    ])
-
-    def add_page_number(canvas, doc):
-        canvas.saveState()
-        canvas.setFont("Helvetica", 8)
-        canvas.drawString(
-            18 * mm,
-            10 * mm,
-            "AfriHealth AI | Research and education only",
+    for limitation in limitations:
+        story.append(
+            Paragraph(
+                "• " + limitation,
+                body_style,
+            )
         )
-        canvas.drawRightString(
-            A4[0] - 18 * mm,
-            10 * mm,
-            f"Page {doc.page}",
-        )
-        canvas.restoreState()
 
-    document.build(
-        story,
-        onFirstPage=add_page_number,
-        onLaterPages=add_page_number,
+    story.append(
+        Paragraph(
+            "6. Recommended Next Research Step",
+            heading_style,
+        )
     )
+
+    story.append(
+        Paragraph(
+            "Conduct a locally relevant validation study using appropriately "
+            "governed Nigerian clinical data. The study should define the "
+            "target population, outcome definition, inclusion and exclusion "
+            "criteria, preprocessing protocol, missing-data strategy, "
+            "threshold selection, calibration assessment and statistical "
+            "analysis plan before evaluation.",
+            body_style,
+        )
+    )
+
+    document.build(story)
 
     buffer.seek(0)
+
     return buffer.getvalue()
 
 
+def get_pipeline_components(model):
+    """
+    Return preprocessing and estimator where possible.
+    """
+
+    if hasattr(model, "named_steps"):
+        steps = model.named_steps
+
+        if len(steps) >= 2:
+            names = list(steps.keys())
+
+            preprocessing = steps[names[-2]]
+            estimator = steps[names[-1]]
+
+            return preprocessing, estimator
+
+    return None, model
+
+
+def get_feature_names_from_preprocessor(preprocessing, original_features):
+    """
+    Attempt to obtain transformed feature names.
+    """
+
+    if preprocessing is None:
+        return original_features
+
+    if hasattr(preprocessing, "get_feature_names_out"):
+        try:
+            names = preprocessing.get_feature_names_out(
+                original_features
+            )
+            return list(names)
+        except Exception:
+            pass
+
+    return original_features
+
+
+def get_logistic_coefficients(model):
+    """
+    Return logistic regression coefficient information if available.
+    """
+
+    preprocessing, estimator = get_pipeline_components(model)
+
+    if not hasattr(estimator, "coef_"):
+        return None
+
+    coefficients = np.asarray(estimator.coef_)
+
+    if coefficients.ndim != 2 or coefficients.shape[0] != 1:
+        return None
+
+    coefficients = coefficients[0]
+
+    classes = getattr(estimator, "classes_", np.array([0, 1]))
+
+    if len(classes) != 2:
+        return None
+
+    # sklearn binary logistic regression coef_ represents classes_[1].
+    # If classes_[1] is 1, coefficients already represent Class 1.
+    # Otherwise reverse the sign so the interpretation is always
+    # "effect on Class 1".
+    if classes[1] == 1:
+        class_1_coefficients = coefficients
+    elif classes[0] == 1:
+        class_1_coefficients = -coefficients
+    else:
+        return None
+
+    names = get_feature_names_from_preprocessor(
+        preprocessing,
+        DEFAULT_FEATURES,
+    )
+
+    if len(names) != len(class_1_coefficients):
+        names = [
+            f"feature_{i + 1}"
+            for i in range(len(class_1_coefficients))
+        ]
+
+    return pd.DataFrame(
+        {
+            "Feature": names,
+            "Coefficient": class_1_coefficients,
+            "Absolute Effect": np.abs(class_1_coefficients),
+        }
+    ).sort_values(
+        "Absolute Effect",
+        ascending=False,
+    )
+
+
+def get_local_contributions(model, input_df):
+    """
+    Calculate approximate local linear contributions for a logistic
+    regression pipeline.
+
+    Contribution = transformed feature value × coefficient.
+
+    This is appropriate for linear logistic regression models.
+    """
+
+    preprocessing, estimator = get_pipeline_components(model)
+
+    if not hasattr(estimator, "coef_"):
+        return None
+
+    try:
+        transformed = preprocessing.transform(input_df)
+
+        if hasattr(transformed, "toarray"):
+            transformed = transformed.toarray()
+
+        transformed = np.asarray(transformed)
+
+        coefficients = np.asarray(estimator.coef_)[0]
+
+        classes = getattr(
+            estimator,
+            "classes_",
+            np.array([0, 1]),
+        )
+
+        if classes[1] == 1:
+            class_1_coefficients = coefficients
+        elif classes[0] == 1:
+            class_1_coefficients = -coefficients
+        else:
+            return None
+
+        if transformed.shape[1] != len(class_1_coefficients):
+            return None
+
+        feature_names = get_feature_names_from_preprocessor(
+            preprocessing,
+            DEFAULT_FEATURES,
+        )
+
+        contributions = transformed[0] * class_1_coefficients
+
+        result = pd.DataFrame(
+            {
+                "Feature": feature_names,
+                "Contribution": contributions,
+                "Absolute Contribution": np.abs(contributions),
+            }
+        )
+
+        return result.sort_values(
+            "Absolute Contribution",
+            ascending=False,
+        )
+
+    except Exception:
+        return None
+
+
 # ============================================================
-# 4. HEADER AND RESEARCH DISCLAIMER
+# LOAD MODEL AND DATA
+# ============================================================
+
+model = load_model()
+metadata = load_metadata()
+evaluation_data = load_evaluation_data()
+
+
+# ============================================================
+# HEADER
 # ============================================================
 
 st.markdown(
-    '<div class="main-title">🫀 AfriHealth AI</div>',
-    unsafe_allow_html=True,
-)
-st.markdown(
-    '<div class="subtitle">AI-powered health-risk intelligence for Africa</div>',
+    '<div class="main-title">🩺 AfriHealth AI</div>',
     unsafe_allow_html=True,
 )
 
-st.write(
-    "A research and educational prototype for exploring "
-    "machine-learning-based cardiovascular classification."
+st.markdown(
+    '<div class="subtitle">'
+    "Research-focused heart disease prediction, evaluation and explainability"
+    "</div>",
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    """
+    <div class="research-note">
+    <b>Research and educational use only.</b><br>
+    AfriHealth AI is a research prototype. It is not a medical device,
+    does not provide a diagnosis, and must not be used as a substitute
+    for qualified medical assessment or treatment.
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
 st.warning(
-    "RESEARCH AND EDUCATIONAL USE ONLY. This is not a diagnostic "
-    "tool. The model uses the UCI Heart Disease dataset and has not "
-    "been externally validated on Nigerian or broader African populations. "
-    "Do not use its output for diagnosis, treatment, or clinical decisions."
+    "Important: The current model was not specifically trained or "
+    "clinically validated on African or Nigerian populations. "
+    "Predicted probabilities are not established individual clinical risk."
 )
 
-st.divider()
+
+# ============================================================
+# SIDEBAR
+# ============================================================
+
+st.sidebar.title("AfriHealth AI")
+
+st.sidebar.markdown(
+    """
+    ### Research Modules
+
+    1. Prediction
+    2. Model Evaluation
+    3. Reliability Analysis
+    4. Explainability
+    5. External Validation
+    6. Research Information
+    """
+)
+
+st.sidebar.caption(
+    f"{MODEL_NAME} · {APP_VERSION}"
+)
 
 
 # ============================================================
-# 5. PROJECT OVERVIEW
+# MODEL STATUS
 # ============================================================
 
-st.header("📊 Project Overview")
+if model is None:
 
-selected_model = metadata.get("selected_model", "Not recorded")
+    st.error(
+        f"Model file `{MODEL_FILE}` was not found. "
+        "Ensure the model file is in the repository root."
+    )
+
+    st.stop()
+
+
+# ============================================================
+# PROJECT METRICS
+# ============================================================
+
+st.subheader("Project Overview")
+
+selected_model = metadata.get(
+    "selected_model",
+    "Logistic Regression",
+)
+
 cv_auc = metadata.get(
     "cross_validation_roc_auc",
-    metadata.get("cross_validation_auc"),
+    metadata.get(
+        "cv_roc_auc",
+        None,
+    ),
 )
 
-try:
-    cv_auc_display = (
-        f"{float(cv_auc):.4f}"
-        if cv_auc is not None
-        else "Not recorded"
+dataset_records = metadata.get(
+    "dataset_records",
+    metadata.get(
+        "records",
+        "N/A",
+    ),
+)
+
+train_records = metadata.get(
+    "train_records",
+    "N/A",
+)
+
+holdout_records = metadata.get(
+    "holdout_records",
+    "N/A",
+)
+
+metric_cols = st.columns(4)
+
+with metric_cols[0]:
+    st.metric(
+        "Selected Model",
+        str(selected_model),
     )
-except (ValueError, TypeError):
-    cv_auc_display = str(cv_auc) if cv_auc is not None else "Not recorded"
 
-overview_cols = st.columns(4)
+with metric_cols[1]:
+    if cv_auc is not None:
+        try:
+            st.metric(
+                "Cross-validation ROC-AUC",
+                f"{float(cv_auc):.3f}",
+            )
+        except Exception:
+            st.metric(
+                "Cross-validation ROC-AUC",
+                str(cv_auc),
+            )
+    else:
+        st.metric(
+            "Cross-validation ROC-AUC",
+            "N/A",
+        )
 
-overview_cols[0].metric("Selected Model", str(selected_model))
-overview_cols[1].metric("Cross-validation ROC-AUC", cv_auc_display)
-overview_cols[2].metric(
-    "Training Records",
-    str(metadata.get("training_records", "N/A")),
-)
-overview_cols[3].metric(
-    "Holdout Records",
-    str(metadata.get("test_records", "N/A")),
-)
+with metric_cols[2]:
+    st.metric(
+        "Training Records",
+        str(train_records),
+    )
 
-st.caption(
-    "Cross-validation ROC-AUC is a model-selection metric. It is not "
-    "a personal disease probability or a guarantee of clinical performance."
-)
+with metric_cols[3]:
+    st.metric(
+        "Holdout Records",
+        str(holdout_records),
+    )
 
 
 # ============================================================
-# 6. RESEARCH INPUT FORM AND PREDICTION
+# PREDICTION
 # ============================================================
 
-st.divider()
-st.header("🩺 Research Input")
+st.header("1. Heart Disease Prediction")
 
-st.write(
-    "Enter values using the coding scheme expected by the saved model."
+st.markdown(
+    """
+    Enter the 13 model features below. The model returns a binary
+    prediction and the estimated probability of Class 1.
+    """
 )
 
-with st.form("risk_prediction_form"):
-    st.subheader("Demographic Information")
-    c1, c2 = st.columns(2)
+with st.form("prediction_form"):
 
-    with c1:
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
         age = st.number_input(
             "Age",
             min_value=1,
             max_value=120,
             value=50,
-            step=1,
         )
 
-    with c2:
         sex = st.selectbox(
             "Sex",
-            [0, 1],
-            format_func=lambda value: (
-                "Female (0)" if value == 0 else "Male (1)"
+            options=[0, 1],
+            format_func=lambda x: (
+                "Female (0)" if x == 0 else "Male (1)"
             ),
         )
 
-    st.subheader("Clinical Measurements")
-    c1, c2 = st.columns(2)
-
-    with c1:
-        trestbps = st.number_input(
-            "Resting Blood Pressure (trestbps)",
-            min_value=50,
-            max_value=250,
-            value=120,
-            step=1,
+        cp = st.selectbox(
+            "Chest Pain Type (cp)",
+            options=[1, 2, 3, 4],
         )
+
+        trestbps = st.number_input(
+            "Resting Blood Pressure",
+            min_value=50,
+            max_value=300,
+            value=120,
+        )
+
         chol = st.number_input(
-            "Serum Cholesterol (chol)",
+            "Serum Cholesterol",
             min_value=50,
             max_value=700,
             value=200,
-            step=1,
         )
+
+    with col2:
+        fbs = st.selectbox(
+            "Fasting Blood Sugar > 120 mg/dl",
+            options=[0, 1],
+            format_func=lambda x: (
+                "No (0)" if x == 0 else "Yes (1)"
+            ),
+        )
+
+        restecg = st.selectbox(
+            "Resting ECG",
+            options=[0, 1, 2],
+        )
+
         thalach = st.number_input(
-            "Maximum Heart Rate (thalach)",
+            "Maximum Heart Rate",
             min_value=50,
             max_value=250,
             value=150,
-            step=1,
         )
 
-    with c2:
+        exang = st.selectbox(
+            "Exercise-Induced Angina",
+            options=[0, 1],
+            format_func=lambda x: (
+                "No (0)" if x == 0 else "Yes (1)"
+            ),
+        )
+
+    with col3:
         oldpeak = st.number_input(
             "ST Depression (oldpeak)",
             min_value=0.0,
@@ -653,1095 +1269,1557 @@ with st.form("risk_prediction_form"):
             value=1.0,
             step=0.1,
         )
-        fbs = st.selectbox(
-            "Fasting Blood Sugar > 120 mg/dl",
-            [0, 1],
-            format_func=lambda value: (
-                "No (0)" if value == 0 else "Yes (1)"
-            ),
+
+        slope = st.selectbox(
+            "Slope",
+            options=[1, 2, 3],
         )
 
-    st.subheader("Diagnostic Features")
-    c1, c2 = st.columns(2)
-
-    with c1:
-        cp = st.selectbox("Chest Pain Type (cp)", [1, 2, 3, 4])
-        restecg = st.selectbox("Resting ECG (restecg)", [0, 1, 2])
-        exang = st.selectbox(
-            "Exercise-Induced Angina (exang)",
-            [0, 1],
-            format_func=lambda value: (
-                "No (0)" if value == 0 else "Yes (1)"
-            ),
+        ca = st.selectbox(
+            "Number of Major Vessels (ca)",
+            options=[0, 1, 2, 3],
         )
 
-    with c2:
-        slope = st.selectbox("ST Segment Slope (slope)", [1, 2, 3])
-        ca = st.selectbox("Major Vessels (ca)", [0, 1, 2, 3])
-        thal = st.selectbox("Thalassemia (thal)", [3, 6, 7])
+        thal = st.selectbox(
+            "Thal",
+            options=[3, 6, 7],
+        )
 
     submitted = st.form_submit_button(
-        "🫀 Run AfriHealth AI Analysis",
+        "Run Prediction",
         use_container_width=True,
     )
 
-input_data = None
-prediction = None
-probability = None
 
 if submitted:
+
     input_data = pd.DataFrame(
-        [{
-            "age": age,
-            "sex": sex,
-            "cp": cp,
-            "trestbps": trestbps,
-            "chol": chol,
-            "fbs": fbs,
-            "restecg": restecg,
-            "thalach": thalach,
-            "exang": exang,
-            "oldpeak": oldpeak,
-            "slope": slope,
-            "ca": ca,
-            "thal": thal,
-        }],
-        columns=FEATURES,
+        [
+            {
+                "age": age,
+                "sex": sex,
+                "cp": cp,
+                "trestbps": trestbps,
+                "chol": chol,
+                "fbs": fbs,
+                "restecg": restecg,
+                "thalach": thalach,
+                "exang": exang,
+                "oldpeak": oldpeak,
+                "slope": slope,
+                "ca": ca,
+                "thal": thal,
+            }
+        ]
     )
 
     try:
-        prediction = int(model.predict(input_data)[0])
 
-        if prediction not in (0, 1):
-            raise ValueError(
-                "The model returned a class outside 0 and 1."
-            )
+        prediction = get_binary_predictions(
+            model,
+            input_data,
+        )[0]
 
-        if hasattr(model, "predict_proba"):
-            probabilities = model.predict_proba(input_data)[0]
-            positive_index = list(model.classes_).index(1)
-            probability = float(probabilities[positive_index])
+        probability = get_probability_for_class_1(
+            model,
+            input_data,
+        )[0]
 
-    except Exception as error:
-        st.error("The model could not process these inputs.")
-        st.caption(str(error))
+        st.session_state["last_prediction"] = prediction
+        st.session_state["last_probability"] = probability
+        st.session_state["last_input"] = input_data
 
-    if prediction is not None:
-        st.divider()
-        st.header("📋 Analysis Result")
+        result_col1, result_col2 = st.columns(2)
 
-        if prediction == 1:
-            st.warning("Model classification: Class 1")
-        else:
-            st.success("Model classification: Class 0")
+        with result_col1:
 
-        if probability is not None:
+            if prediction == 1:
+                st.error(
+                    "Model prediction: Class 1"
+                )
+            else:
+                st.success(
+                    "Model prediction: Class 0"
+                )
+
+        with result_col2:
+
             st.metric(
-                "Model-estimated probability for class 1",
-                f"{probability * 100:.2f}%",
+                "Class 1 probability",
+                f"{probability:.1%}",
             )
-        else:
-            st.info("Probability output is not available.")
 
         st.warning(
-            "This is a model classification, not a diagnosis. The "
-            "probability is not a clinically validated personal risk "
-            "estimate. Do not use it to make medical or treatment decisions."
+            "This probability is a model output, not a clinically "
+            "validated personal risk percentage."
         )
 
-        with st.expander("View submitted research inputs"):
+    except Exception as exc:
+
+        st.error(
+            f"Prediction could not be completed: {exc}"
+        )
+
+
+# ============================================================
+# MODEL EVALUATION DASHBOARD
+# ============================================================
+
+st.header("2. Model Evaluation Dashboard")
+
+if evaluation_data is None:
+
+    st.info(
+        f"`{EVALUATION_FILE}` was not found. "
+        "Add the evaluation predictions file to the repository "
+        "to display the holdout evaluation dashboard."
+    )
+
+else:
+
+    required_eval_columns = [
+        "y_true",
+        "y_pred",
+        "prob_class_1",
+    ]
+
+    missing_eval = [
+        column
+        for column in required_eval_columns
+        if column not in evaluation_data.columns
+    ]
+
+    if missing_eval:
+
+        st.error(
+            "The evaluation CSV is missing required columns: "
+            + ", ".join(missing_eval)
+        )
+
+    else:
+
+        eval_df = evaluation_data.copy()
+
+        y_true_eval = pd.to_numeric(
+            eval_df["y_true"],
+            errors="coerce",
+        )
+
+        y_pred_eval = pd.to_numeric(
+            eval_df["y_pred"],
+            errors="coerce",
+        )
+
+        probabilities_eval = pd.to_numeric(
+            eval_df["prob_class_1"],
+            errors="coerce",
+        )
+
+        valid_eval = (
+            y_true_eval.notna()
+            & y_pred_eval.notna()
+            & probabilities_eval.notna()
+        )
+
+        y_true_eval = y_true_eval[valid_eval].astype(int).to_numpy()
+        y_pred_eval = y_pred_eval[valid_eval].astype(int).to_numpy()
+        probabilities_eval = (
+            probabilities_eval[valid_eval].astype(float).to_numpy()
+        )
+
+        if (
+            len(y_true_eval) == 0
+            or len(np.unique(y_true_eval)) != 2
+        ):
+
+            st.error(
+                "The evaluation data must contain both Class 0 and Class 1."
+            )
+
+        else:
+
+            evaluation_metrics = calculate_metrics(
+                y_true_eval,
+                y_pred_eval,
+                probabilities_eval,
+            )
+
+            metric_cols = st.columns(4)
+
+            with metric_cols[0]:
+                st.metric(
+                    "Accuracy",
+                    f"{evaluation_metrics['Accuracy']:.3f}",
+                )
+
+            with metric_cols[1]:
+                st.metric(
+                    "Precision",
+                    f"{evaluation_metrics['Precision']:.3f}",
+                )
+
+            with metric_cols[2]:
+                st.metric(
+                    "Recall",
+                    f"{evaluation_metrics['Sensitivity']:.3f}",
+                )
+
+            with metric_cols[3]:
+                st.metric(
+                    "F1",
+                    f"{evaluation_metrics['F1 Score']:.3f}",
+                )
+
+            chart_col1, chart_col2 = st.columns(2)
+
+            with chart_col1:
+
+                cm = confusion_matrix(
+                    y_true_eval,
+                    y_pred_eval,
+                    labels=[0, 1],
+                )
+
+                cm_fig = go.Figure(
+                    data=[
+                        go.Heatmap(
+                            z=cm,
+                            x=["Predicted 0", "Predicted 1"],
+                            y=["Actual 0", "Actual 1"],
+                            text=cm,
+                            texttemplate="%{text}",
+                            colorscale="Blues",
+                        )
+                    ]
+                )
+
+                cm_fig.update_layout(
+                    title="Confusion Matrix",
+                    height=450,
+                )
+
+                st.plotly_chart(
+                    cm_fig,
+                    use_container_width=True,
+                )
+
+            with chart_col2:
+
+                st.plotly_chart(
+                    create_roc_figure(
+                        y_true_eval,
+                        probabilities_eval,
+                        "Holdout ROC Curve",
+                    ),
+                    use_container_width=True,
+                )
+
+            summary_df = pd.DataFrame(
+                {
+                    "Metric": list(evaluation_metrics.keys()),
+                    "Value": [
+                        f"{value:.4f}"
+                        for value in evaluation_metrics.values()
+                    ],
+                }
+            )
+
+            st.subheader("Evaluation Summary")
+
             st.dataframe(
-                input_data,
+                summary_df,
                 use_container_width=True,
                 hide_index=True,
             )
 
+            st.caption(
+                "Cross-validation ROC-AUC and holdout ROC-AUC are model "
+                "evaluation statistics. They should not be interpreted "
+                "as individual clinical risk probabilities."
+            )
+
 
 # ============================================================
-# 7. LOAD HOLDOUT EVALUATION DATA
+# RELIABILITY ANALYSIS
 # ============================================================
 
-evaluation_df = None
-actual = predicted = probabilities = None
-evaluation_error = None
+st.header("3. Reliability and Calibration Analysis")
 
-if EVALUATION_PATH.is_file():
+if evaluation_data is None:
+
+    st.info(
+        "Holdout evaluation data is required for reliability analysis."
+    )
+
+else:
+
     try:
-        evaluation_df = pd.read_csv(EVALUATION_PATH)
-        actual, predicted, probabilities = validate_evaluation_data(
-            evaluation_df
-        )
-    except Exception as error:
-        evaluation_error = str(error)
 
+        eval_df = evaluation_data.copy()
 
-# ============================================================
-# 8. BUILD 04 - MODEL EVALUATION DASHBOARD
-# ============================================================
-
-st.divider()
-st.header("📈 Model Evaluation Dashboard")
-
-st.caption(
-    "These metrics describe the exported holdout predictions only."
-)
-
-if evaluation_df is None:
-    st.info(
-        "Add evaluation_predictions.csv to the repository root "
-        "to enable the evaluation dashboard."
-    )
-    if evaluation_error:
-        st.error(evaluation_error)
-
-else:
-    metric_values = safe_metric(actual, predicted)
-    metric_cols = st.columns(4)
-
-    for column, (name, value) in zip(
-        metric_cols,
-        list(metric_values.items())[:4],
-    ):
-        column.metric(name, f"{value:.3f}")
-
-    st.subheader("Confusion Matrix")
-    st.plotly_chart(
-        make_confusion_matrix_figure(actual, predicted),
-        use_container_width=True,
-    )
-
-    st.caption(
-        "The matrix shows correct and incorrect classifications "
-        "in the exported holdout dataset."
-    )
-
-    if len(np.unique(actual)) == 2:
-        st.subheader("Receiver Operating Characteristic (ROC) Curve")
-        roc_fig, auc_value = make_roc_figure(
-            actual,
-            probabilities,
-            title="Holdout ROC curve",
-        )
-        st.plotly_chart(roc_fig, use_container_width=True)
-        st.metric("Holdout ROC-AUC", f"{auc_value:.3f}")
-
-        metric_values["Holdout ROC-AUC"] = auc_value
-    else:
-        st.warning(
-            "ROC-AUC requires both actual classes in the evaluation data."
+        y_true_rel = pd.to_numeric(
+            eval_df["y_true"],
+            errors="coerce",
         )
 
-    st.subheader("Evaluation Summary")
-    summary_df = pd.DataFrame({
-        "Metric": list(metric_values.keys()),
-        "Value": list(metric_values.values()),
-    })
-
-    st.dataframe(
-        summary_df.style.format({"Value": "{:.4f}"}),
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    st.caption(
-        f"Evaluation records: {len(actual)}. These results do not "
-        "establish clinical validity or generalisation to African populations."
-    )
-
-
-# ============================================================
-# 9. BUILD 05A - RELIABILITY AND VALIDATION
-# ============================================================
-
-st.divider()
-st.header("🛡️ Model Reliability and Validation")
-
-st.write(
-    "This section examines classification performance and predicted "
-    "probabilities on the available holdout sample."
-)
-
-if evaluation_df is None:
-    st.info(
-        "Reliability checks require a valid evaluation_predictions.csv."
-    )
-else:
-    if len(np.unique(actual)) < 2:
-        st.warning(
-            "Both actual classes are required for the full reliability checks."
-        )
-    else:
-        tn, fp, fn, tp = confusion_matrix(
-            actual, predicted, labels=[0, 1]
-        ).ravel()
-
-        sensitivity = tp / (tp + fn) if tp + fn else 0.0
-        specificity = tn / (tn + fp) if tn + fp else 0.0
-        brier = brier_score_loss(actual, probabilities)
-        balanced = balanced_accuracy_score(actual, predicted)
-
-        reliability_cols = st.columns(4)
-        reliability_cols[0].metric(
-            "Balanced accuracy", f"{balanced:.3f}"
-        )
-        reliability_cols[1].metric(
-            "Sensitivity", f"{sensitivity:.3f}"
-        )
-        reliability_cols[2].metric(
-            "Specificity", f"{specificity:.3f}"
-        )
-        reliability_cols[3].metric(
-            "Brier score", f"{brier:.3f}"
+        probabilities_rel = pd.to_numeric(
+            eval_df["prob_class_1"],
+            errors="coerce",
         )
 
-        st.caption(
-            "Sensitivity is the proportion of class-1 cases identified. "
-            "Specificity is the proportion of class-0 cases identified. "
-            "Lower Brier scores indicate better probability accuracy "
-            "on this sample, but do not prove calibration."
+        valid_rel = (
+            y_true_rel.notna()
+            & probabilities_rel.notna()
         )
 
-        st.subheader("Holdout Probability Calibration")
-        try:
-            calibration_fig = make_calibration_figure(
-                actual,
-                probabilities,
-                bins=5,
-                strategy="uniform",
-                title="Holdout probability calibration",
+        y_true_rel = y_true_rel[valid_rel].astype(int).to_numpy()
+        probabilities_rel = (
+            probabilities_rel[valid_rel].astype(float).to_numpy()
+        )
+
+        y_pred_rel = (
+            probabilities_rel >= 0.5
+        ).astype(int)
+
+        reliability_metrics = calculate_metrics(
+            y_true_rel,
+            y_pred_rel,
+            probabilities_rel,
+        )
+
+        rcols = st.columns(4)
+
+        with rcols[0]:
+            st.metric(
+                "Balanced Accuracy",
+                f"{reliability_metrics['Balanced Accuracy']:.3f}",
             )
-            st.plotly_chart(
-                calibration_fig,
-                use_container_width=True,
-            )
-        except Exception as error:
-            st.warning("The holdout calibration chart could not be created.")
-            st.caption(str(error))
 
-        st.caption(
-            "The curve compares average predicted probabilities with "
-            "observed class-1 frequencies. A small holdout sample can "
-            "produce unstable curves. This check does not establish "
-            "clinical validity."
+        with rcols[1]:
+            st.metric(
+                "Sensitivity",
+                f"{reliability_metrics['Sensitivity']:.3f}",
+            )
+
+        with rcols[2]:
+            st.metric(
+                "Specificity",
+                f"{reliability_metrics['Specificity']:.3f}",
+            )
+
+        with rcols[3]:
+            st.metric(
+                "Brier Score",
+                f"{reliability_metrics['Brier Score']:.3f}",
+            )
+
+        st.plotly_chart(
+            create_calibration_figure(
+                y_true_rel,
+                probabilities_rel,
+                "Holdout Calibration Curve",
+            ),
+            use_container_width=True,
         )
 
-        st.subheader("Classification Details")
-        report = classification_report(
-            actual,
-            predicted,
-            labels=[0, 1],
-            target_names=["Class 0", "Class 1"],
+        report_dict = classification_report(
+            y_true_rel,
+            y_pred_rel,
             output_dict=True,
             zero_division=0,
         )
 
-        report_df = pd.DataFrame(report).transpose()
+        report_df = pd.DataFrame(report_dict).transpose()
+
+        st.subheader("Classification Report")
+
         st.dataframe(
-            report_df.style.format("{:.3f}"),
+            report_df.round(4),
             use_container_width=True,
         )
 
-        with st.expander("Validation Limitations"):
-            st.markdown(
-                """
-                - The available holdout sample is limited.
-                - Performance can change with a different sample.
-                - Calibration on this dataset may not transfer to other
-                  hospitals, countries, or populations.
-                - These checks do not constitute independent external validation.
-                - This prototype is not intended for diagnosis or treatment.
-                """
-            )
-
-
-# ============================================================
-# 10. BUILD 05B - PDF REPORT AND CSV DOWNLOADS
-# ============================================================
-
-st.divider()
-st.header("📄 Downloadable Research Reports")
-
-if evaluation_df is None:
-    st.info(
-        "A valid evaluation_predictions.csv is required to generate reports."
-    )
-else:
-    try:
-        report_metrics = safe_metric(actual, predicted)
-        report_metrics["Brier score"] = brier_score_loss(
-            actual, probabilities
-        )
-        report_metrics["Balanced accuracy"] = balanced_accuracy_score(
-            actual, predicted
-        )
-
-        if len(np.unique(actual)) == 2:
-            report_metrics["Holdout ROC-AUC"] = roc_auc_score(
-                actual, probabilities
-            )
-
-        pdf_bytes = create_pdf_report(
-            report_metrics,
-            metadata,
-            len(actual),
-            "Model Evaluation and Reliability Report",
-        )
-
-        download_cols = st.columns(2)
-
-        with download_cols[0]:
-            st.download_button(
-                "📄 Download PDF Research Report",
-                data=pdf_bytes,
-                file_name="AfriHealth_AI_Research_Report.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-            )
-
-        with download_cols[1]:
-            st.download_button(
-                "📊 Download Evaluation Predictions CSV",
-                data=evaluation_df.to_csv(index=False).encode("utf-8"),
-                file_name="AfriHealth_AI_Evaluation_Predictions.csv",
-                mime="text/csv",
-                use_container_width=True,
-            )
-
-        st.caption(
-            "Review CSV contents and remove any sensitive information "
-            "before sharing the file."
-        )
-
-    except Exception as error:
-        st.error("The research report could not be generated.")
-        st.caption(str(error))
-
-
-# ============================================================
-# 11. BUILD 04B - MODEL EXPLAINABILITY
-# ============================================================
-
-st.divider()
-st.header("🔎 Model Explainability")
-
-st.write(
-    "Explore the learned coefficients of the Logistic Regression "
-    "model and, after submitting an input, its feature contributions."
-)
-
-st.caption(
-    "These explanations describe model behaviour, not medical causes "
-    "or causal relationships."
-)
-
-try:
-    if not hasattr(model, "steps") or len(model.steps) < 2:
-        raise ValueError(
-            "The loaded model is not a supported preprocessing pipeline."
-        )
-
-    estimator = model.steps[-1][1]
-    preprocessing = model[:-1]
-
-    if not hasattr(estimator, "coef_"):
-        raise ValueError(
-            "The final estimator does not expose Logistic Regression coefficients."
-        )
-
-    if not hasattr(preprocessing, "get_feature_names_out"):
-        raise ValueError(
-            "The preprocessing pipeline cannot provide transformed feature names."
-        )
-
-    transformed_names = preprocessing.get_feature_names_out()
-    classes = list(estimator.classes_)
-    coefficient_array = np.asarray(estimator.coef_)
-
-    if len(classes) != 2 or coefficient_array.shape[0] != 1:
-        raise ValueError(
-            "Coefficient explanations currently support binary Logistic Regression."
-        )
-
-    if 1 not in classes:
-        raise ValueError("Expected positive class 1 was not found.")
-
-    # Binary Logistic Regression coefficients represent classes_[1].
-    coef_class_1 = coefficient_array[0].copy()
-
-    if classes.index(1) == 0:
-        coef_class_1 = -coef_class_1
-
-    if len(transformed_names) != len(coef_class_1):
-        raise ValueError(
-            "Transformed feature names do not match coefficient count."
-        )
-
-    importance_df = pd.DataFrame({
-        "Feature": [
-            str(name).replace("__", " / ")
-            for name in transformed_names
-        ],
-        "Coefficient": coef_class_1,
-        "Absolute coefficient": np.abs(coef_class_1),
-    }).sort_values("Absolute coefficient", ascending=False)
-
-    with st.expander("How to read these explanations"):
         st.markdown(
             """
-            - **Global view:** ranks transformed features by absolute
-              coefficient magnitude.
-            - **Positive coefficient:** increasing the transformed feature
-              pushes class-1 log-odds upward.
-            - **Negative coefficient:** increasing the transformed feature
-              pushes class-1 log-odds downward.
-            - **Local view:** shows feature contributions for the submitted
-              record relative to the model intercept.
-            """
-        )
-        st.caption(
-            "Categorical variables may be represented by multiple encoded "
-            "columns. Coefficients are not causal effects."
+            <div class="warning-note">
+            <b>Calibration limitation:</b>
+            A Brier score alone does not establish that predicted
+            probabilities are clinically calibrated. Calibration should
+            be assessed using the reliability curve and, ideally,
+            additional calibration statistics on an appropriately
+            representative validation cohort.
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
 
-    st.subheader("1. Global Feature Influence")
+    except Exception as exc:
 
-    top_global = importance_df.head(15).sort_values(
-        "Absolute coefficient", ascending=True
-    )
-
-    global_fig = go.Figure(
-        go.Bar(
-            x=top_global["Absolute coefficient"],
-            y=top_global["Feature"],
-            orientation="h",
-            marker_color="#16c7b7",
-            hovertemplate=(
-                "Feature: %{y}<br>"
-                "Absolute coefficient: %{x:.4f}<extra></extra>"
-            ),
+        st.error(
+            f"Reliability analysis could not be completed: {exc}"
         )
+
+
+# ============================================================
+# PDF AND EVALUATION DOWNLOADS
+# ============================================================
+
+st.header("4. Evaluation Report and Downloads")
+
+if evaluation_data is not None:
+
+    try:
+
+        y_true_report = pd.to_numeric(
+            evaluation_data["y_true"],
+            errors="coerce",
+        )
+
+        y_pred_report = pd.to_numeric(
+            evaluation_data["y_pred"],
+            errors="coerce",
+        )
+
+        probabilities_report = pd.to_numeric(
+            evaluation_data["prob_class_1"],
+            errors="coerce",
+        )
+
+        valid_report = (
+            y_true_report.notna()
+            & y_pred_report.notna()
+            & probabilities_report.notna()
+        )
+
+        y_true_report = y_true_report[valid_report].astype(int).to_numpy()
+        y_pred_report = y_pred_report[valid_report].astype(int).to_numpy()
+        probabilities_report = (
+            probabilities_report[valid_report].astype(float).to_numpy()
+        )
+
+        report_metrics = calculate_metrics(
+            y_true_report,
+            y_pred_report,
+            probabilities_report,
+        )
+
+        report_rows = []
+
+        for metric_name, value in report_metrics.items():
+            report_rows.append(
+                {
+                    "Metric": metric_name,
+                    "Value": value,
+                }
+            )
+
+        report_download_df = pd.DataFrame(report_rows)
+
+        st.download_button(
+            label="Download Evaluation Metrics CSV",
+            data=report_download_df.to_csv(index=False).encode("utf-8"),
+            file_name="afrihealth_evaluation_metrics.csv",
+            mime="text/csv",
+        )
+
+        if REPORTLAB_AVAILABLE:
+
+            pdf_bytes = create_pdf_report(
+                source="AfriHealth AI holdout evaluation dataset",
+                n_records=len(y_true_report),
+                class_0=int(np.sum(y_true_report == 0)),
+                class_1=int(np.sum(y_true_report == 1)),
+                metrics_df=pd.DataFrame(
+                    [
+                        {
+                            "Metric": key,
+                            "Estimate": value,
+                            "95% CI Lower": np.nan,
+                            "95% CI Upper": np.nan,
+                        }
+                        for key, value in report_metrics.items()
+                    ]
+                ),
+                calibration_text=(
+                    "The holdout calibration curve is provided in the "
+                    "interactive application. This PDF does not establish "
+                    "clinical calibration."
+                ),
+                constant_features=[],
+            )
+
+            if pdf_bytes:
+
+                st.download_button(
+                    label="Download Evaluation PDF Report",
+                    data=pdf_bytes,
+                    file_name="afrihealth_evaluation_report.pdf",
+                    mime="application/pdf",
+                )
+
+        else:
+
+            st.info(
+                "ReportLab is not available. Install the required "
+                "dependency from requirements.txt to enable PDF reports."
+            )
+
+    except Exception as exc:
+
+        st.error(
+            f"Report generation failed: {exc}"
+        )
+
+
+# ============================================================
+# EXPLAINABILITY
+# ============================================================
+
+st.header("5. Explainability")
+
+st.subheader("Global Logistic Regression Coefficients")
+
+coefficient_df = get_logistic_coefficients(model)
+
+if coefficient_df is None:
+
+    st.info(
+        "Coefficient-based explainability is available when the "
+        "loaded model contains a compatible Logistic Regression estimator."
     )
 
-    global_fig.update_layout(
-        template="plotly_dark",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        xaxis_title="Absolute coefficient magnitude",
-        yaxis_title="Transformed feature",
-        height=520,
+else:
+
+    display_coefficients = coefficient_df[
+        [
+            "Feature",
+            "Coefficient",
+            "Absolute Effect",
+        ]
+    ].copy()
+
+    display_coefficients["Coefficient"] = (
+        display_coefficients["Coefficient"].round(4)
     )
 
-    st.plotly_chart(global_fig, use_container_width=True)
+    display_coefficients["Absolute Effect"] = (
+        display_coefficients["Absolute Effect"].round(4)
+    )
 
     st.dataframe(
-        importance_df.head(15)[
-            ["Feature", "Coefficient", "Absolute coefficient"]
-        ].style.format({
-            "Coefficient": "{:.4f}",
-            "Absolute coefficient": "{:.4f}",
-        }),
+        display_coefficients,
         use_container_width=True,
         hide_index=True,
     )
 
     st.caption(
-        "Coefficient magnitude is not a measure of clinical importance. "
-        "Preprocessing, encoding, and correlated features can affect ranking."
+        "Positive coefficients increase the model's linear tendency "
+        "toward Class 1. Negative coefficients decrease it. These are "
+        "model coefficients, not clinical causal effects."
     )
 
-    st.subheader("2. Individual Prediction Explanation")
 
-    if submitted and input_data is not None and prediction is not None:
-        transformed_input = preprocessing.transform(input_data)
+if "last_input" in st.session_state:
 
-        if hasattr(transformed_input, "toarray"):
-            transformed_input = transformed_input.toarray()
+    st.subheader("Local Prediction Explanation")
 
-        transformed_row = np.asarray(transformed_input)[0]
-        contributions = transformed_row * coef_class_1
+    local_result = get_local_contributions(
+        model,
+        st.session_state["last_input"],
+    )
 
-        intercept = float(
-            np.asarray(estimator.intercept_).ravel()[0]
-        )
-        if classes.index(1) == 0:
-            intercept = -intercept
+    if local_result is None:
 
-        local_df = pd.DataFrame({
-            "Feature": [
-                str(name).replace("__", " / ")
-                for name in transformed_names
-            ],
-            "Contribution": contributions,
-        })
-
-        local_df["Absolute contribution"] = np.abs(
-            local_df["Contribution"]
+        st.info(
+            "A local contribution explanation could not be generated "
+            "for the loaded model."
         )
 
-        local_df = local_df.sort_values(
-            "Absolute contribution", ascending=False
+    else:
+
+        local_display = local_result[
+            [
+                "Feature",
+                "Contribution",
+                "Absolute Contribution",
+            ]
+        ].copy()
+
+        local_display["Contribution"] = (
+            local_display["Contribution"].round(4)
         )
 
-        top_local = local_df.head(12).sort_values("Contribution")
-        top_local["Direction"] = np.where(
-            top_local["Contribution"] >= 0,
-            "Pushes towards class 1",
-            "Pushes away from class 1",
+        local_display["Absolute Contribution"] = (
+            local_display["Absolute Contribution"].round(4)
         )
-
-        local_fig = go.Figure(
-            go.Bar(
-                x=top_local["Contribution"],
-                y=top_local["Feature"],
-                orientation="h",
-                marker_color=[
-                    "#ff8c69" if value >= 0 else "#16c7b7"
-                    for value in top_local["Contribution"]
-                ],
-                customdata=top_local[["Direction"]].to_numpy(),
-                hovertemplate=(
-                    "Feature: %{y}<br>"
-                    "Contribution: %{x:.4f}<br>"
-                    "%{customdata[0]}<extra></extra>"
-                ),
-            )
-        )
-
-        local_fig.add_vline(
-            x=0,
-            line_dash="dash",
-            line_color="#9fb0c0",
-        )
-
-        local_fig.update_layout(
-            template="plotly_dark",
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            xaxis_title="Contribution to class-1 log-odds",
-            yaxis_title="Transformed feature",
-            height=480,
-        )
-
-        st.plotly_chart(local_fig, use_container_width=True)
 
         st.dataframe(
-            local_df[
-                ["Feature", "Contribution", "Absolute contribution"]
-            ].style.format({
-                "Contribution": "{:.4f}",
-                "Absolute contribution": "{:.4f}",
-            }),
+            local_display,
             use_container_width=True,
             hide_index=True,
         )
 
-        st.metric("Model intercept for class-1 log-odds", f"{intercept:.4f}")
-
         st.caption(
-            "The intercept plus the sum of feature contributions reconstructs "
-            "the class-1 log-odds for this binary Logistic Regression model. "
-            "Contributions are not percentages or personal medical risk factors."
+            "Local contributions show how transformed input features "
+            "contribute to the logistic model's Class 1 score. They "
+            "should not be interpreted as causal clinical explanations."
         )
-    else:
-        st.info(
-            "Submit the Research Input form above to view an individual explanation."
-        )
-
-except Exception as error:
-    st.warning(
-        "Coefficient-based explainability is unavailable for the current model."
-    )
-    st.caption(f"Technical detail: {error}")
 
 
 # ============================================================
-# 12. MODEL INFORMATION
+# MODEL INFORMATION
 # ============================================================
 
-st.divider()
-st.header("🔬 Model Information")
+st.header("6. Model Information")
 
-with st.expander("View model and research details"):
-    st.write("Selected model:", selected_model)
+info_col1, info_col2 = st.columns(2)
+
+with info_col1:
+
+    st.subheader("Model")
+
     st.write(
-        "Selection metric:",
-        metadata.get("selection_metric", "Not recorded"),
-    )
-    st.write("Cross-validation ROC-AUC:", cv_auc_display)
-    st.write(
-        "Dataset:",
-        metadata.get("dataset", "UCI Heart Disease dataset"),
-    )
-    st.write(
-        "Training records:",
-        metadata.get("training_records", "Not recorded"),
-    )
-    st.write(
-        "Holdout test records:",
-        metadata.get("test_records", "Not recorded"),
-    )
-    st.write(
-        "Scikit-learn version:",
-        metadata.get("scikit_learn_version", "Not recorded"),
-    )
-    st.write(
-        "Model version:",
-        metadata.get("version", "Not recorded"),
-    )
-    st.write(
-        "Created (UTC):",
-        metadata.get("created_at_utc", "Not recorded"),
-    )
-    st.write(
-        "Intended use:",
-        metadata.get(
-            "intended_use",
-            "Research and educational use only.",
-        ),
+        f"**Selected model:** {selected_model}"
     )
 
-with st.expander("📚 View input feature schema"):
-    feature_table = pd.DataFrame({
-        "Feature": FEATURES,
-        "Purpose": FEATURE_DESCRIPTIONS,
-    })
+    if metadata:
+
+        sklearn_version = metadata.get(
+            "sklearn_version",
+            metadata.get(
+                "scikit_learn_version",
+                "Not supplied",
+            ),
+        )
+
+        st.write(
+            f"**scikit-learn version:** {sklearn_version}"
+        )
+
+        if cv_auc is not None:
+            try:
+                st.write(
+                    f"**Cross-validation ROC-AUC:** {float(cv_auc):.4f}"
+                )
+            except Exception:
+                st.write(
+                    f"**Cross-validation ROC-AUC:** {cv_auc}"
+                )
+
+        st.write(
+            f"**Dataset records:** {dataset_records}"
+        )
+
+with info_col2:
+
+    st.subheader("Feature Schema")
+
     st.dataframe(
-        feature_table,
+        pd.DataFrame(
+            {
+                "Feature": DEFAULT_FEATURES,
+                "Expected range": [
+                    f"{EXPECTED_FEATURE_RANGES[f][0]}–"
+                    f"{EXPECTED_FEATURE_RANGES[f][1]}"
+                    for f in DEFAULT_FEATURES
+                ],
+            }
+        ),
         use_container_width=True,
         hide_index=True,
     )
 
-with st.expander("⚠️ Research limitations"):
-    st.markdown(
-        """
-        **Dataset:** UCI Heart Disease dataset, repository ID 45.
-
-        **Sample size:** The project records 303 samples, with 242 used
-        for training and 61 reserved for holdout testing, according to
-        the current project description.
-
-        **Model selection:** Logistic Regression was selected using
-        cross-validation ROC-AUC.
-
-        **Population limitation:** The source dataset is not representative
-        of the Nigerian or broader African population.
-
-        **External validation:** Independent validation on Nigerian or
-        African clinical data has not been established by this app.
-
-        **Clinical use:** Do not use this prototype for diagnosis,
-        treatment, patient triage, or clinical decisions.
-
-        **Future research:** Representative datasets, external validation,
-        calibration, fairness assessment, privacy safeguards, and clinical
-        collaboration are needed.
-        """
-    )
-
 
 # ============================================================
-# 13. BUILD 06A / 06B - EXTERNAL VALIDATION WORKSPACE
+# EXTERNAL VALIDATION
 # ============================================================
 
-st.divider()
-st.header("🧪 Build 06: External Validation Workspace")
+st.header("7. Build 06A: External Validation Workspace")
 
-st.write(
-    "Evaluate the frozen saved model on a separately sourced dataset. "
-    "This workflow does not train or retrain the model."
+st.markdown(
+    """
+    This workspace evaluates the frozen AfriHealth AI model on an
+    external dataset without retraining the model.
+
+    The external dataset must contain the same 13 features expected
+    by the model plus a binary `target` column.
+    """
 )
 
-st.caption(
-    "Required columns: all 13 model features and a binary target column "
-    "named target. The target must already use 0 and 1."
+st.markdown(
+    """
+    <div class="research-note">
+    <b>External validation principle:</b>
+    The model is frozen during this evaluation. No model retraining,
+    parameter fitting or threshold optimization is performed here.
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
-st.code(", ".join(FEATURES + ["target"]))
-
-st.warning(
-    "Upload only authorised, de-identified data. Do not upload names, "
-    "addresses, phone numbers, medical record numbers, or other "
-    "directly identifying patient information."
-)
-
-external_file = st.file_uploader(
-    "Upload an authorised validation CSV",
-    type=["csv"],
-    key="external_validation_csv",
+source_default = (
+    "UCI Heart Disease Dataset, Hungarian cohort"
 )
 
 external_source = st.text_input(
-    "Dataset source or study identifier",
-    placeholder="Example: independent cohort, study identifier",
-    key="external_validation_source",
+    "External dataset source / provenance",
+    value=source_default,
+    help=(
+        "Enter the repository, cohort, institution or study source. "
+        "Do not leave this as 'Not supplied' when preparing a research report."
+    ),
 )
 
-if external_file is not None:
-    st.caption(
-        "Check dataset provenance, permissions, target definition, feature "
-        "coding, and independence from model development before interpreting results."
-    )
+uploaded_file = st.file_uploader(
+    "Upload external validation CSV",
+    type=["csv"],
+    key="external_validation_uploader",
+)
 
-    if st.button(
-        "Run validation on uploaded dataset",
-        key="run_external_validation",
-        type="primary",
-        use_container_width=True,
-    ):
-        try:
-            external_df = pd.read_csv(external_file)
+if uploaded_file is not None:
 
-            required_external = set(FEATURES + ["target"])
-            missing_external = required_external - set(external_df.columns)
+    try:
 
-            if missing_external:
-                st.error(
-                    "Missing required columns: "
-                    + ", ".join(sorted(missing_external))
+        external_df = pd.read_csv(
+            uploaded_file
+        )
+
+    except Exception as exc:
+
+        st.error(
+            f"Could not read the uploaded CSV: {exc}"
+        )
+
+        external_df = None
+
+    if external_df is not None:
+
+        required_external_columns = DEFAULT_FEATURES + ["target"]
+
+        missing_columns = [
+            column
+            for column in required_external_columns
+            if column not in external_df.columns
+        ]
+
+        if missing_columns:
+
+            st.error(
+                "The uploaded CSV is missing these required columns: "
+                + ", ".join(missing_columns)
+            )
+
+        else:
+
+            # Keep only required columns for evaluation.
+            external_working = external_df[
+                required_external_columns
+            ].copy()
+
+            # Convert every required column to numeric.
+            for column in required_external_columns:
+
+                external_working[column] = pd.to_numeric(
+                    external_working[column],
+                    errors="coerce",
                 )
 
-            elif external_df.empty:
-                st.error("The uploaded dataset contains no records.")
+            missing_after_conversion = (
+                external_working.isna().sum()
+            )
+
+            columns_with_missing = (
+                missing_after_conversion[
+                    missing_after_conversion > 0
+                ]
+                .index
+                .tolist()
+            )
+
+            if columns_with_missing:
+
+                st.error(
+                    "The uploaded dataset contains missing or non-numeric "
+                    "values after conversion in: "
+                    + ", ".join(columns_with_missing)
+                )
 
             else:
-                X_external = external_df[FEATURES].copy()
-                X_external = X_external.apply(
-                    pd.to_numeric, errors="coerce"
+
+                # Validate target.
+                target_values = set(
+                    external_working["target"]
+                    .astype(int)
+                    .unique()
+                    .tolist()
                 )
 
-                y_series = pd.to_numeric(
-                    external_df["target"], errors="coerce"
-                )
+                if not target_values.issubset({0, 1}):
 
-                if X_external.isnull().any().any():
-                    bad_columns = X_external.columns[
-                        X_external.isnull().any()
-                    ].tolist()
                     st.error(
-                        "Missing or non-numeric feature values in: "
-                        + ", ".join(bad_columns)
+                        "The `target` column must contain only 0 and 1."
                     )
 
-                elif y_series.isnull().any():
-                    st.error(
-                        "The target column contains missing or "
-                        "non-numeric values."
-                    )
+                elif len(target_values) != 2:
 
-                elif not np.isfinite(
-                    X_external.to_numpy(dtype=float)
-                ).all():
-                    st.error("All feature values must be finite numbers.")
-
-                elif not np.isin(y_series.to_numpy(), [0, 1]).all():
                     st.error(
-                        "The target must already be binary: 0 or 1. "
-                        "Apply the documented target transformation before upload."
-                    )
-
-                elif y_series.nunique() < 2:
-                    st.error(
-                        "The dataset must contain both target classes."
+                        "The external validation dataset must contain "
+                        "both Class 0 and Class 1."
                     )
 
                 else:
-                    y_external = y_series.to_numpy(dtype=int)
 
-                    if not hasattr(model, "predict_proba"):
-                        st.error(
-                            "The saved model does not support probability predictions."
+                    # Validate feature ranges.
+                    range_warnings = []
+
+                    for feature_name in DEFAULT_FEATURES:
+
+                        minimum, maximum = (
+                            EXPECTED_FEATURE_RANGES[
+                                feature_name
+                            ]
                         )
 
-                    else:
-                        positive_index = list(model.classes_).index(1)
+                        values = external_working[
+                            feature_name
+                        ]
 
-                        external_predictions = np.asarray(
-                            model.predict(X_external)
-                        ).astype(int)
-
-                        external_probabilities = np.asarray(
-                            model.predict_proba(X_external)[:, positive_index],
-                            dtype=float,
+                        outside = (
+                            (values < minimum)
+                            | (values > maximum)
                         )
 
-                        if not np.isin(
-                            external_predictions, [0, 1]
-                        ).all():
-                            st.error(
-                                "The model returned predictions outside classes 0 and 1."
+                        if outside.any():
+
+                            range_warnings.append(
+                                f"{feature_name}: "
+                                f"{int(outside.sum())} value(s) "
+                                f"outside expected range "
+                                f"{minimum}–{maximum}"
                             )
 
-                        elif (
-                            not np.isfinite(
-                                external_probabilities
-                            ).all()
-                            or (
-                                (external_probabilities < 0)
-                                | (external_probabilities > 1)
-                            ).any()
+                    if range_warnings:
+
+                        st.warning(
+                            "Some external feature values are outside "
+                            "the expected model input ranges:\n\n"
+                            + "\n".join(
+                                [
+                                    f"- {warning}"
+                                    for warning in range_warnings
+                                ]
+                            )
+                        )
+
+                    # Identify constant features.
+                    constant_features = []
+
+                    for feature_name in DEFAULT_FEATURES:
+
+                        if (
+                            external_working[
+                                feature_name
+                            ].nunique()
+                            <= 1
                         ):
+
+                            constant_features.append(
+                                feature_name
+                            )
+
+                    if constant_features:
+
+                        st.warning(
+                            "Constant feature warning: "
+                            + ", ".join(constant_features)
+                            + " has no variation in this external "
+                            "dataset. This may limit the usefulness "
+                            "of external generalisation assessment."
+                        )
+
+                    # Display dataset information.
+                    st.subheader(
+                        "External Dataset Summary"
+                    )
+
+                    external_n = len(
+                        external_working
+                    )
+
+                    external_class_0 = int(
+                        (
+                            external_working["target"]
+                            == 0
+                        ).sum()
+                    )
+
+                    external_class_1 = int(
+                        (
+                            external_working["target"]
+                            == 1
+                        ).sum()
+                    )
+
+                    summary_cols = st.columns(4)
+
+                    with summary_cols[0]:
+                        st.metric(
+                            "Records evaluated",
+                            external_n,
+                        )
+
+                    with summary_cols[1]:
+                        st.metric(
+                            "Class 0",
+                            external_class_0,
+                        )
+
+                    with summary_cols[2]:
+                        st.metric(
+                            "Class 1",
+                            external_class_1,
+                        )
+
+                    with summary_cols[3]:
+                        st.metric(
+                            "Class 1 proportion",
+                            f"{external_class_1 / external_n:.1%}",
+                        )
+
+                    st.write(
+                        f"**Dataset source:** "
+                        f"{external_source.strip() or 'Not supplied'}"
+                    )
+
+                    st.dataframe(
+                        external_working.head(10),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                    # ------------------------------------------------
+                    # FROZEN MODEL EXTERNAL PREDICTION
+                    # ------------------------------------------------
+
+                    X_external = external_working[
+                        DEFAULT_FEATURES
+                    ].copy()
+
+                    y_external = (
+                        external_working["target"]
+                        .astype(int)
+                        .to_numpy()
+                    )
+
+                    try:
+
+                        external_predictions = (
+                            get_binary_predictions(
+                                model,
+                                X_external,
+                            )
+                        )
+
+                        external_probabilities = (
+                            get_probability_for_class_1(
+                                model,
+                                X_external,
+                            )
+                        )
+
+                        # Validate probability values.
+                        if not np.all(
+                            np.isfinite(
+                                external_probabilities
+                            )
+                        ):
+
+                            raise ValueError(
+                                "The model returned non-finite "
+                                "probabilities."
+                            )
+
+                        if np.any(
+                            (external_probabilities < 0)
+                            | (external_probabilities > 1)
+                        ):
+
+                            raise ValueError(
+                                "The model returned probabilities "
+                                "outside the 0–1 range."
+                            )
+
+                        # Validate prediction count.
+                        if len(external_predictions) != external_n:
+
+                            raise ValueError(
+                                "The number of model predictions does "
+                                "not match the number of external records."
+                            )
+
+                    except Exception as exc:
+
+                        st.error(
+                            "External prediction failed: "
+                            f"{exc}"
+                        )
+
+                        external_predictions = None
+                        external_probabilities = None
+
+                    # ------------------------------------------------
+                    # EXTERNAL METRICS
+                    # ------------------------------------------------
+
+                    if (
+                        external_predictions is not None
+                        and external_probabilities is not None
+                    ):
+
+                        external_metrics = calculate_metrics(
+                            y_external,
+                            external_predictions,
+                            external_probabilities,
+                        )
+
+                        st.subheader(
+                            "External Validation Performance"
+                        )
+
+                        metric_cols = st.columns(4)
+
+                        with metric_cols[0]:
+                            st.metric(
+                                "Accuracy",
+                                f"{external_metrics['Accuracy']:.3f}",
+                            )
+
+                        with metric_cols[1]:
+                            st.metric(
+                                "Balanced Accuracy",
+                                f"{external_metrics['Balanced Accuracy']:.3f}",
+                            )
+
+                        with metric_cols[2]:
+                            st.metric(
+                                "Sensitivity",
+                                f"{external_metrics['Sensitivity']:.3f}",
+                            )
+
+                        with metric_cols[3]:
+                            st.metric(
+                                "Specificity",
+                                f"{external_metrics['Specificity']:.3f}",
+                            )
+
+                        metric_cols_2 = st.columns(4)
+
+                        with metric_cols_2[0]:
+                            st.metric(
+                                "Precision",
+                                f"{external_metrics['Precision']:.3f}",
+                            )
+
+                        with metric_cols_2[1]:
+                            st.metric(
+                                "F1 Score",
+                                f"{external_metrics['F1 Score']:.3f}",
+                            )
+
+                        with metric_cols_2[2]:
+                            st.metric(
+                                "ROC-AUC",
+                                f"{external_metrics['ROC-AUC']:.3f}",
+                            )
+
+                        with metric_cols_2[3]:
+                            st.metric(
+                                "Brier Score",
+                                f"{external_metrics['Brier Score']:.3f}",
+                            )
+
+                        # ------------------------------------------------
+                        # MATHEMATICAL CONSISTENCY CHECK
+                        # ------------------------------------------------
+
+                        calculated_balanced_accuracy = (
+                            external_metrics["Sensitivity"]
+                            + external_metrics["Specificity"]
+                        ) / 2
+
+                        balanced_accuracy_difference = abs(
+                            calculated_balanced_accuracy
+                            - external_metrics["Balanced Accuracy"]
+                        )
+
+                        if balanced_accuracy_difference > 1e-8:
+
                             st.error(
-                                "The model produced invalid probabilities."
+                                "Metric consistency check failed. "
+                                "Balanced accuracy does not equal the "
+                                "mean of sensitivity and specificity."
                             )
 
                         else:
-                            tn, fp, fn, tp = confusion_matrix(
+
+                            st.success(
+                                "Metric consistency check passed. "
+                                "Sensitivity, specificity and balanced "
+                                "accuracy were calculated from the same "
+                                "predictions."
+                            )
+
+                        # ------------------------------------------------
+                        # CONFUSION MATRIX
+                        # ------------------------------------------------
+
+                        st.subheader(
+                            "External Confusion Matrix"
+                        )
+
+                        external_cm = confusion_matrix(
+                            y_external,
+                            external_predictions,
+                            labels=[0, 1],
+                        )
+
+                        cm_fig = go.Figure(
+                            data=[
+                                go.Heatmap(
+                                    z=external_cm,
+                                    x=[
+                                        "Predicted 0",
+                                        "Predicted 1",
+                                    ],
+                                    y=[
+                                        "Actual 0",
+                                        "Actual 1",
+                                    ],
+                                    text=external_cm,
+                                    texttemplate="%{text}",
+                                    colorscale="Blues",
+                                )
+                            ]
+                        )
+
+                        cm_fig.update_layout(
+                            title="External Validation Confusion Matrix",
+                            height=500,
+                        )
+
+                        st.plotly_chart(
+                            cm_fig,
+                            use_container_width=True,
+                        )
+
+                        # ------------------------------------------------
+                        # CLASSIFICATION REPORT
+                        # ------------------------------------------------
+
+                        st.subheader(
+                            "External Classification Report"
+                        )
+
+                        external_report = classification_report(
+                            y_external,
+                            external_predictions,
+                            output_dict=True,
+                            zero_division=0,
+                        )
+
+                        external_report_df = (
+                            pd.DataFrame(
+                                external_report
+                            ).transpose()
+                        )
+
+                        st.dataframe(
+                            external_report_df.round(4),
+                            use_container_width=True,
+                        )
+
+                        # ------------------------------------------------
+                        # BOOTSTRAP CONFIDENCE INTERVALS
+                        # ------------------------------------------------
+
+                        st.subheader(
+                            "95% Bootstrap Confidence Intervals"
+                        )
+
+                        st.caption(
+                            "Intervals are generated using 1,000 "
+                            "class-stratified bootstrap resamples. "
+                            "They quantify sampling uncertainty within "
+                            "this external evaluation cohort."
+                        )
+
+                        with st.spinner(
+                            "Calculating 1,000 class-stratified bootstrap resamples..."
+                        ):
+
+                            external_metrics_ci = (
+                                create_bootstrap_results(
+                                    y_external,
+                                    external_predictions,
+                                    external_probabilities,
+                                    n_bootstrap=1000,
+                                )
+                            )
+
+                        ci_display = (
+                            external_metrics_ci.copy()
+                        )
+
+                        ci_display[
+                            "Estimate"
+                        ] = ci_display[
+                            "Estimate"
+                        ].map(
+                            lambda value: (
+                                f"{value:.3f}"
+                                if pd.notna(value)
+                                else "N/A"
+                            )
+                        )
+
+                        ci_display[
+                            "95% CI"
+                        ] = ci_display.apply(
+                            lambda row: format_ci(
+                                row["95% CI Lower"],
+                                row["95% CI Upper"],
+                            ),
+                            axis=1,
+                        )
+
+                        ci_display = ci_display[
+                            [
+                                "Metric",
+                                "Estimate",
+                                "95% CI",
+                            ]
+                        ]
+
+                        st.dataframe(
+                            ci_display,
+                            use_container_width=True,
+                            hide_index=True,
+                        )
+
+                        # ------------------------------------------------
+                        # ROC CURVE
+                        # ------------------------------------------------
+
+                        st.subheader(
+                            "External ROC Curve"
+                        )
+
+                        st.plotly_chart(
+                            create_roc_figure(
                                 y_external,
+                                external_probabilities,
+                                "External Validation ROC Curve",
+                            ),
+                            use_container_width=True,
+                        )
+
+                        # ------------------------------------------------
+                        # EXTERNAL CALIBRATION
+                        # ------------------------------------------------
+
+                        st.subheader(
+                            "External Calibration Curve"
+                        )
+
+                        st.plotly_chart(
+                            create_calibration_figure(
+                                y_external,
+                                external_probabilities,
+                                "External Validation Calibration Curve",
+                            ),
+                            use_container_width=True,
+                        )
+
+                        calibration_interpretation = (
+                            interpret_calibration(
+                                y_external,
+                                external_probabilities,
+                            )
+                        )
+
+                        st.info(
+                            calibration_interpretation
+                        )
+
+                        st.warning(
+                            "The Brier score and calibration curve are "
+                            "descriptive evidence of probabilistic "
+                            "performance. They do not establish that "
+                            "AfriHealth AI provides clinically calibrated "
+                            "individual risk."
+                        )
+
+                        # ------------------------------------------------
+                        # EXTERNAL VALIDATION INTERPRETATION
+                        # ------------------------------------------------
+
+                        st.subheader(
+                            "Research Interpretation"
+                        )
+
+                        auc_value = external_metrics[
+                            "ROC-AUC"
+                        ]
+
+                        accuracy_value = external_metrics[
+                            "Accuracy"
+                        ]
+
+                        sensitivity_value = external_metrics[
+                            "Sensitivity"
+                        ]
+
+                        specificity_value = external_metrics[
+                            "Specificity"
+                        ]
+
+                        brier_value = external_metrics[
+                            "Brier Score"
+                        ]
+
+                        st.markdown(
+                            f"""
+                            **AfriHealth AI demonstrated an ROC-AUC of
+                            {auc_value:.3f} on the evaluated external
+                            cohort of {external_n} records.**
+
+                            The model achieved an accuracy of
+                            {accuracy_value:.1%}, sensitivity of
+                            {sensitivity_value:.1%}, and specificity of
+                            {specificity_value:.1%} at the model's
+                            classification threshold.
+
+                            The Brier score was {brier_value:.3f}.
+                            Probabilistic performance should be interpreted
+                            together with the calibration curve rather than
+                            from the Brier score alone.
+
+                            These results indicate promising performance
+                            on this particular external cohort. They do
+                            not establish clinical validity, clinical
+                            safety, or generalisability to Nigerian
+                            populations.
+                            """
+                        )
+
+                        # ------------------------------------------------
+                        # DATA QUALITY / GENERALISATION WARNINGS
+                        # ------------------------------------------------
+
+                        st.subheader(
+                            "External Validation Limitations"
+                        )
+
+                        limitation_items = [
+                            "The model is being evaluated on a public external cohort and was not retrained during this analysis.",
+                            "The current model has not been specifically trained or clinically validated on a Nigerian population.",
+                            "Differences in patient demographics, measurement practices, disease prevalence and feature distributions may affect generalisation.",
+                            "The external dataset contains constant features where applicable. Such features provide no variation for assessing external robustness.",
+                            "Confidence intervals describe sampling uncertainty in this cohort and do not establish population-level clinical validity.",
+                            "The selected classification threshold may not be optimal for a clinical screening or diagnostic use case.",
+                            "The model's predicted probabilities should not be interpreted as clinically calibrated individual risk.",
+                            "Prospective validation and appropriate clinical governance would be required before clinical deployment.",
+                        ]
+
+                        for item in limitation_items:
+                            st.markdown(
+                                f"- {item}"
+                            )
+
+                        # ------------------------------------------------
+                        # DOWNLOADABLE METRICS
+                        # ------------------------------------------------
+
+                        st.subheader(
+                            "Download External Validation Results"
+                        )
+
+                        metrics_download_df = (
+                            external_metrics_ci.copy()
+                        )
+
+                        metrics_csv = (
+                            make_metrics_download(
+                                metrics_download_df
+                            )
+                        )
+
+                        st.download_button(
+                            label="Download External Metrics CSV",
+                            data=metrics_csv,
+                            file_name=(
+                                "afrihealth_external_validation_metrics.csv"
+                            ),
+                            mime="text/csv",
+                        )
+
+                        # ------------------------------------------------
+                        # DOWNLOAD PREDICTIONS
+                        # ------------------------------------------------
+
+                        predictions_csv = (
+                            make_external_predictions_download(
+                                external_working,
                                 external_predictions,
-                                labels=[0, 1],
-                            ).ravel()
-
-                            sensitivity = (
-                                tp / (tp + fn) if tp + fn else 0.0
-                            )
-                            specificity = (
-                                tn / (tn + fp) if tn + fp else 0.0
-                            )
-
-                            external_metrics = {
-                                "Accuracy": accuracy_score(
-                                    y_external, external_predictions
-                                ),
-                                "Balanced accuracy": balanced_accuracy_score(
-                                    y_external, external_predictions
-                                ),
-                                "Precision": precision_score(
-                                    y_external,
-                                    external_predictions,
-                                    zero_division=0,
-                                ),
-                                "Sensitivity": sensitivity,
-                                "Specificity": specificity,
-                                "F1 score": f1_score(
-                                    y_external,
-                                    external_predictions,
-                                    zero_division=0,
-                                ),
-                                "ROC-AUC": roc_auc_score(
-                                    y_external,
-                                    external_probabilities,
-                                ),
-                                "Brier score": brier_score_loss(
-                                    y_external,
-                                    external_probabilities,
-                                ),
-                            }
-
-                            # Stratified bootstrap:
-                            # sample each actual class separately so both
-                            # classes remain represented in every replicate.
-                            rng = np.random.default_rng(2026)
-                            indices_0 = np.flatnonzero(y_external == 0)
-                            indices_1 = np.flatnonzero(y_external == 1)
-
-                            bootstrap_results = {
-                                name: [] for name in external_metrics
-                            }
-
-                            for _ in range(1000):
-                                sampled_indices = np.concatenate([
-                                    rng.choice(
-                                        indices_0,
-                                        size=len(indices_0),
-                                        replace=True,
-                                    ),
-                                    rng.choice(
-                                        indices_1,
-                                        size=len(indices_1),
-                                        replace=True,
-                                    ),
-                                ])
-
-                                y_boot = y_external[sampled_indices]
-                                pred_boot = external_predictions[sampled_indices]
-                                prob_boot = external_probabilities[sampled_indices]
-
-                                tn_b, fp_b, fn_b, tp_b = confusion_matrix(
-                                    y_boot, pred_boot, labels=[0, 1]
-                                ).ravel()
-
-                                boot_sensitivity = (
-                                    tp_b / (tp_b + fn_b)
-                                    if tp_b + fn_b else 0.0
-                                )
-                                boot_specificity = (
-                                    tn_b / (tn_b + fp_b)
-                                    if tn_b + fp_b else 0.0
-                                )
-
-                                boot_metrics = {
-                                    "Accuracy": accuracy_score(
-                                        y_boot, pred_boot
-                                    ),
-                                    "Balanced accuracy": balanced_accuracy_score(
-                                        y_boot, pred_boot
-                                    ),
-                                    "Precision": precision_score(
-                                        y_boot,
-                                        pred_boot,
-                                        zero_division=0,
-                                    ),
-                                    "Sensitivity": boot_sensitivity,
-                                    "Specificity": boot_specificity,
-                                    "F1 score": f1_score(
-                                        y_boot,
-                                        pred_boot,
-                                        zero_division=0,
-                                    ),
-                                    "ROC-AUC": roc_auc_score(
-                                        y_boot, prob_boot
-                                    ),
-                                    "Brier score": brier_score_loss(
-                                        y_boot, prob_boot
-                                    ),
-                                }
-
-                                for name, value in boot_metrics.items():
-                                    bootstrap_results[name].append(value)
-
-                            ci_rows = []
-
-                            for name, estimate in external_metrics.items():
-                                lower, upper = np.percentile(
-                                    bootstrap_results[name],
-                                    [2.5, 97.5],
-                                )
-
-                                ci_rows.append({
-                                    "Metric": name,
-                                    "Estimate": estimate,
-                                    "95% CI lower": lower,
-                                    "95% CI upper": upper,
-                                })
-
-                            ci_df = pd.DataFrame(ci_rows)
-
-                            st.subheader("External Validation Results")
-                            st.write(
-                                "Dataset source:",
-                                external_source.strip() or "Not supplied",
-                            )
-                            st.write(
-                                f"Records evaluated: {len(y_external)}"
-                            )
-                            st.write(
-                                f"Class 0: {len(indices_0)} | "
-                                f"Class 1: {len(indices_1)}"
-                            )
-
-                            st.dataframe(
-                                ci_df.style.format({
-                                    "Estimate": "{:.3f}",
-                                    "95% CI lower": "{:.3f}",
-                                    "95% CI upper": "{:.3f}",
-                                }),
-                                use_container_width=True,
-                                hide_index=True,
-                            )
-
-                            st.caption(
-                                "Intervals are percentile intervals from "
-                                "1,000 class-stratified bootstrap replicates. "
-                                "They reflect sampling variation under this "
-                                "procedure, not all sources of uncertainty."
-                            )
-
-                            st.subheader("External Dataset ROC Curve")
-                            roc_fig, _ = make_roc_figure(
-                                y_external,
                                 external_probabilities,
-                                title="External dataset ROC curve",
                             )
-                            st.plotly_chart(
-                                roc_fig,
-                                use_container_width=True,
-                            )
+                        )
 
-                            # BUILD 06B: calibration appears only after
-                            # external predictions and labels are available.
-                            st.subheader("External Probability Calibration")
+                        st.download_button(
+                            label="Download External Predictions CSV",
+                            data=predictions_csv,
+                            file_name=(
+                                "afrihealth_external_validation_predictions.csv"
+                            ),
+                            mime="text/csv",
+                        )
 
-                            calibration_fig = make_calibration_figure(
-                                y_external,
-                                external_probabilities,
-                                bins=5,
-                                strategy="quantile",
-                                title="External probability calibration",
-                            )
+                        # ------------------------------------------------
+                        # PDF REPORT
+                        # ------------------------------------------------
 
-                            st.plotly_chart(
-                                calibration_fig,
-                                use_container_width=True,
+                        if REPORTLAB_AVAILABLE:
+
+                            pdf_metrics = (
+                                external_metrics_ci.copy()
                             )
 
-                            st.caption(
-                                "This chart compares predicted probabilities "
-                                "with observed class-1 frequencies in the "
-                                "uploaded dataset. Small datasets may produce "
-                                "unstable curves. Calibration does not prove "
-                                "clinical validity."
+                            pdf_bytes = create_pdf_report(
+                                source=(
+                                    external_source.strip()
+                                    or "Not supplied"
+                                ),
+                                n_records=external_n,
+                                class_0=external_class_0,
+                                class_1=external_class_1,
+                                metrics_df=pdf_metrics,
+                                calibration_text=(
+                                    calibration_interpretation
+                                ),
+                                constant_features=(
+                                    constant_features
+                                ),
                             )
 
-                            st.subheader("Download Validation Results")
+                            if pdf_bytes:
 
-                            results_df = X_external.copy()
-                            results_df["y_true"] = y_external
-                            results_df["y_pred"] = external_predictions
-                            results_df["prob_class_1"] = external_probabilities
-
-                            download_cols = st.columns(2)
-
-                            with download_cols[0]:
                                 st.download_button(
-                                    "Download predictions CSV",
-                                    data=results_df.to_csv(
-                                        index=False
-                                    ).encode("utf-8"),
-                                    file_name=(
-                                        "AfriHealth_Validation_Predictions.csv"
+                                    label=(
+                                        "Download External Validation "
+                                        "PDF Report"
                                     ),
-                                    mime="text/csv",
-                                    key="download_external_predictions",
-                                    use_container_width=True,
+                                    data=pdf_bytes,
+                                    file_name=(
+                                        "afrihealth_external_validation_report.pdf"
+                                    ),
+                                    mime="application/pdf",
                                 )
 
-                            with download_cols[1]:
-                                st.download_button(
-                                    "Download metrics and confidence intervals",
-                                    data=ci_df.to_csv(
-                                        index=False
-                                    ).encode("utf-8"),
-                                    file_name=(
-                                        "AfriHealth_Validation_Metrics.csv"
-                                    ),
-                                    mime="text/csv",
-                                    key="download_external_metrics",
-                                    use_container_width=True,
-                                )
+                        else:
 
-                            st.warning(
-                                "Call this external validation only after "
-                                "confirming dataset independence, provenance, "
-                                "appropriate permissions, and compatible feature "
-                                "definitions. Results do not establish clinical "
-                                "validity or suitability for medical decisions."
+                            st.info(
+                                "PDF reporting requires ReportLab. "
+                                "Ensure `reportlab>=4.0,<5` is present "
+                                "in requirements.txt."
                             )
-
-        except Exception as error:
-            st.error(
-                "Validation could not be completed. Check the CSV schema, "
-                "feature coding, target labels, and model compatibility."
-            )
-            st.caption(str(error))
 
 
 # ============================================================
-# 14. FOOTER
+# RESEARCH LIMITATIONS
+# ============================================================
+
+st.header("8. Research Limitations")
+
+limitations = [
+    "AfriHealth AI is a research prototype and not a clinically approved medical device.",
+    "The current model is based on the UCI Heart Disease dataset.",
+    "The model has not been specifically trained or validated on Nigerian or broader African populations.",
+    "External validation on a public cohort does not establish clinical validity.",
+    "Model performance may change because of dataset shift, demographic differences, clinical practice differences and measurement differences.",
+    "Predicted probabilities are not automatically calibrated clinical risk estimates.",
+    "The model should not be used to diagnose disease or determine treatment.",
+    "Future validation should use appropriately governed local clinical data.",
+    "Any future clinical study should have a predefined statistical analysis plan and appropriate ethical and data-protection approvals.",
+]
+
+for item in limitations:
+    st.markdown(
+        f"- {item}"
+    )
+
+
+# ============================================================
+# RESEARCH ROADMAP
+# ============================================================
+
+st.header("9. Recommended Research Roadmap")
+
+roadmap = [
+    (
+        "Stage 1",
+        "Public external validation",
+        "Completed as an initial generalisation assessment."
+    ),
+    (
+        "Stage 2",
+        "Metric and calibration audit",
+        "Confirm reproducibility, confidence intervals and calibration."
+    ),
+    (
+        "Stage 3",
+        "Nigerian retrospective validation",
+        "Evaluate the frozen model on appropriately governed Nigerian clinical data."
+    ),
+    (
+        "Stage 4",
+        "Prospective validation",
+        "Evaluate performance prospectively under a predefined study protocol."
+    ),
+    (
+        "Stage 5",
+        "Clinical utility assessment",
+        "Assess whether the model improves decision-making compared with existing practice."
+    ),
+]
+
+roadmap_df = pd.DataFrame(
+    roadmap,
+    columns=[
+        "Stage",
+        "Research Phase",
+        "Objective",
+    ],
+)
+
+st.dataframe(
+    roadmap_df,
+    use_container_width=True,
+    hide_index=True,
+)
+
+
+# ============================================================
+# FOOTER
 # ============================================================
 
 st.divider()
 
-st.caption(
-    "AfriHealth AI | AI-powered health-risk intelligence for Africa | "
-    "Research and educational prototype | Version 0.1.0"
+st.markdown(
+    """
+    <div style="text-align:center; color:#6b7280;">
+    <b>AfriHealth AI</b><br>
+    AI-assisted heart disease prediction research prototype<br>
+    Research and educational use only. Not for diagnosis or treatment.
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
