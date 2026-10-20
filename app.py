@@ -2808,6 +2808,390 @@ st.dataframe(
 
 
 # ============================================================
+# PHASE 6B: DATA QUALITY & DISTRIBUTION AUDIT
+# ============================================================
+
+with st.expander(
+    "Phase 6B: Data Quality & Distribution Audit",
+    expanded=False
+):
+    import numpy as np
+    import pandas as pd
+    import plotly.express as px
+
+    st.subheader("Research Data Audit")
+
+    st.write(
+        "Compare development, holdout, and external datasets "
+        "without retraining or modifying the frozen model."
+    )
+
+    FEATURES_AUDIT = [
+        "age", "sex", "cp", "trestbps", "chol", "fbs",
+        "restecg", "thalach", "exang", "oldpeak",
+        "slope", "ca", "thal"
+    ]
+
+    TARGET_AUDIT = "target"
+
+    st.warning(
+        "Upload datasets only when you have verified their "
+        "source, cohort, feature definitions, and target coding. "
+        "This audit does not establish clinical validity."
+    )
+
+    def audit_dataset(df, dataset_name):
+        """Create row-level quality summaries for a dataset."""
+        missing_features = [
+            col for col in FEATURES_AUDIT if col not in df.columns
+        ]
+
+        if missing_features:
+            return None, (
+                f"{dataset_name}: missing required columns: "
+                + ", ".join(missing_features)
+            )
+
+        work = df[FEATURES_AUDIT].copy()
+
+        for col in FEATURES_AUDIT:
+            work[col] = pd.to_numeric(work[col], errors="coerce")
+
+        rows = []
+
+        for col in FEATURES_AUDIT:
+            values = work[col]
+            observed = values.dropna()
+
+            rows.append({
+                "Dataset": dataset_name,
+                "Feature": col,
+                "Records": len(work),
+                "Missing": int(values.isna().sum()),
+                "Missing (%)": round(
+                    values.isna().mean() * 100, 2
+                ),
+                "Unique values": int(observed.nunique()),
+                "Constant feature": (
+                    observed.nunique() <= 1
+                    if len(observed) > 0 else True
+                ),
+                "Minimum": (
+                    observed.min() if len(observed) else np.nan
+                ),
+                "Median": (
+                    observed.median() if len(observed) else np.nan
+                ),
+                "Maximum": (
+                    observed.max() if len(observed) else np.nan
+                ),
+                "Mean": (
+                    observed.mean() if len(observed) else np.nan
+                ),
+                "Standard deviation": (
+                    observed.std() if len(observed) > 1 else np.nan
+                ),
+            })
+
+        summary = pd.DataFrame(rows)
+
+        dataset_summary = {
+            "Dataset": dataset_name,
+            "Records": len(df),
+            "Duplicate rows": int(df.duplicated().sum()),
+            "Missing target": (
+                int(df[TARGET_AUDIT].isna().sum())
+                if TARGET_AUDIT in df.columns else np.nan
+            ),
+            "Target classes": (
+                int(df[TARGET_AUDIT].nunique(dropna=True))
+                if TARGET_AUDIT in df.columns else np.nan
+            ),
+        }
+
+        if TARGET_AUDIT in df.columns:
+            target = pd.to_numeric(
+                df[TARGET_AUDIT], errors="coerce"
+            )
+            valid_target = target.dropna()
+            dataset_summary["Invalid target values"] = int(
+                (~valid_target.isin([0, 1])).sum()
+            )
+            dataset_summary["Class 0 (%)"] = round(
+                (target == 0).mean() * 100, 2
+            )
+            dataset_summary["Class 1 (%)"] = round(
+                (target == 1).mean() * 100, 2
+            )
+        else:
+            dataset_summary["Invalid target values"] = np.nan
+            dataset_summary["Class 0 (%)"] = np.nan
+            dataset_summary["Class 1 (%)"] = np.nan
+
+        return (summary, dataset_summary), None
+
+    st.markdown("### 1. Upload comparison datasets")
+
+    st.caption(
+        "Upload CSV files containing the 13 model features and, "
+        "where available, a binary target column coded 0 or 1."
+    )
+
+    development_file = st.file_uploader(
+        "Development or training dataset (CSV)",
+        type=["csv"],
+        key="audit_development"
+    )
+
+    holdout_file = st.file_uploader(
+        "Internal holdout dataset (CSV)",
+        type=["csv"],
+        key="audit_holdout"
+    )
+
+    external_file = st.file_uploader(
+        "External validation dataset (CSV)",
+        type=["csv"],
+        key="audit_external"
+    )
+
+    uploaded_sets = []
+
+    for label, uploaded in [
+        ("Development", development_file),
+        ("Internal holdout", holdout_file),
+        ("External validation", external_file),
+    ]:
+        if uploaded is not None:
+            try:
+                uploaded.seek(0)
+                frame = pd.read_csv(uploaded)
+                uploaded_sets.append((label, frame))
+            except Exception as exc:
+                st.error(f"Could not read {label} CSV: {exc}")
+
+    if uploaded_sets:
+        all_feature_summaries = []
+        all_dataset_summaries = []
+        valid_frames = {}
+
+        for label, frame in uploaded_sets:
+            result, error = audit_dataset(frame, label)
+
+            if error:
+                st.error(error)
+                continue
+
+            feature_summary, dataset_summary = result
+            all_feature_summaries.append(feature_summary)
+            all_dataset_summaries.append(dataset_summary)
+
+            clean = frame.copy()
+            for col in FEATURES_AUDIT:
+                clean[col] = pd.to_numeric(
+                    clean[col], errors="coerce"
+                )
+            valid_frames[label] = clean
+
+        if all_feature_summaries:
+            feature_audit = pd.concat(
+                all_feature_summaries, ignore_index=True
+            )
+            dataset_audit = pd.DataFrame(all_dataset_summaries)
+
+            st.markdown("### 2. Dataset overview")
+            st.dataframe(dataset_audit, use_container_width=True)
+
+            st.markdown("### 3. Feature quality")
+            st.dataframe(feature_audit, use_container_width=True)
+
+            st.download_button(
+                "Download feature quality audit",
+                feature_audit.to_csv(index=False).encode("utf-8"),
+                file_name="afrihealth_phase6b_feature_audit.csv",
+                mime="text/csv",
+                key="download_feature_audit"
+            )
+
+            st.download_button(
+                "Download dataset summary",
+                dataset_audit.to_csv(index=False).encode("utf-8"),
+                file_name="afrihealth_phase6b_dataset_summary.csv",
+                mime="text/csv",
+                key="download_dataset_audit"
+            )
+
+            st.markdown("### 4. Compare feature distributions")
+
+            selected_feature = st.selectbox(
+                "Select a feature",
+                FEATURES_AUDIT,
+                key="audit_feature_selection"
+            )
+
+            plot_frames = []
+
+            for label, frame in valid_frames.items():
+                values = frame[selected_feature].dropna()
+
+                if not values.empty:
+                    plot_frames.append(pd.DataFrame({
+                        "Dataset": label,
+                        "Value": values
+                    }))
+
+            if plot_frames:
+                plot_data = pd.concat(
+                    plot_frames, ignore_index=True
+                )
+
+                fig = px.box(
+                    plot_data,
+                    x="Dataset",
+                    y="Value",
+                    color="Dataset",
+                    points="outliers",
+                    title=(
+                        f"{selected_feature}: "
+                        "dataset distribution comparison"
+                    )
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+            st.markdown("### 5. Standardised mean differences")
+
+            reference_name = st.selectbox(
+                "Reference dataset",
+                list(valid_frames.keys()),
+                key="audit_reference"
+            )
+
+            reference = valid_frames[reference_name]
+            smd_rows = []
+
+            for label, frame in valid_frames.items():
+                if label == reference_name:
+                    continue
+
+                for feature in FEATURES_AUDIT:
+                    a = pd.to_numeric(
+                        reference[feature], errors="coerce"
+                    ).dropna()
+                    b = pd.to_numeric(
+                        frame[feature], errors="coerce"
+                    ).dropna()
+
+                    if len(a) < 2 or len(b) < 2:
+                        smd = np.nan
+                    else:
+                        pooled_sd = np.sqrt(
+                            (a.var(ddof=1) + b.var(ddof=1)) / 2
+                        )
+
+                        smd = (
+                            (b.mean() - a.mean()) / pooled_sd
+                            if pooled_sd > 0 else np.nan
+                        )
+
+                    smd_rows.append({
+                        "Reference": reference_name,
+                        "Comparison": label,
+                        "Feature": feature,
+                        "SMD": smd,
+                        "Absolute SMD": (
+                            abs(smd) if pd.notna(smd) else np.nan
+                        ),
+                    })
+
+            smd_table = pd.DataFrame(smd_rows)
+
+            if not smd_table.empty:
+                smd_table["Potential shift"] = (
+                    smd_table["Absolute SMD"] >= 0.20
+                )
+
+                st.dataframe(
+                    smd_table.sort_values(
+                        "Absolute SMD",
+                        ascending=False,
+                        na_position="last"
+                    ),
+                    use_container_width=True
+                )
+
+                st.caption(
+                    "Absolute SMD values around 0.20, 0.50, and "
+                    "0.80 are sometimes used as descriptive "
+                    "small, moderate, and large difference "
+                    "benchmarks. They are not universal pass/fail "
+                    "criteria, especially for binary or categorical "
+                    "features."
+                )
+
+                st.download_button(
+                    "Download distribution comparison",
+                    smd_table.to_csv(index=False).encode("utf-8"),
+                    file_name="afrihealth_phase6b_distribution_comparison.csv",
+                    mime="text/csv",
+                    key="download_smd_audit"
+                )
+
+            st.markdown("### 6. Research interpretation")
+
+            st.write(
+                "- Missing values may indicate data quality "
+                "problems or differences in collection procedures."
+            )
+            st.write(
+                "- Constant features provide no within-dataset "
+                "variation for assessing their distribution."
+            )
+            st.write(
+                "- Large feature differences may reflect population "
+                "differences, measurement differences, coding "
+                "differences, or data processing issues."
+            )
+            st.write(
+                "- These comparisons do not prove that distribution "
+                "shift caused a change in model performance."
+            )
+            st.write(
+                "- Do not pool cohorts or change the frozen model "
+                "solely to improve external metrics."
+            )
+
+            if "External validation" in valid_frames:
+                external = valid_frames["External validation"]
+
+                constant_features = [
+                    feature for feature in FEATURES_AUDIT
+                    if external[feature].nunique(dropna=True) <= 1
+                ]
+
+                if constant_features:
+                    st.warning(
+                        "External dataset constant features: "
+                        + ", ".join(constant_features)
+                        + ". Check source documentation and coding "
+                        "before drawing conclusions."
+                    )
+
+                if "ca" in constant_features:
+                    st.error(
+                        "The external dataset has no variation in "
+                        "'ca'. This limits the assessment of this "
+                        "predictor in the external cohort. Verify "
+                        "the original source and parsing."
+                    )
+
+    else:
+        st.info(
+            "Upload at least one dataset to begin the audit. "
+            "For a three-way comparison, upload the development, "
+            "internal holdout, and external validation CSV files."
+        )
+        
+# ============================================================
 # FOOTER
 # ============================================================
 
