@@ -3933,6 +3933,497 @@ with st.expander("Phase 6D: Subgroup Analysis", expanded=False):
             )
 
             st.exception(e)
+
+
+# ============================================================
+# PHASE 6E: REPRODUCIBILITY AND RESEARCH PROTOCOL
+# ============================================================
+
+with st.expander(
+    "Phase 6E: Reproducibility and Research Protocol",
+    expanded=False
+):
+
+    import sys
+    import json
+    import hashlib
+    import platform
+    from pathlib import Path
+    from datetime import datetime, timezone
+
+    import sklearn
+
+    st.markdown("""
+    ### Reproducibility and Research Protocol
+
+    This section documents the evaluation configuration, available
+    software and model artifacts, and the known limitations of the
+    AfriHealth AI research evaluation.
+
+    This is a documentation and audit utility. It does not retrain
+    the model, alter predictions, or establish clinical validity.
+    """)
+
+    # --------------------------------------------------------
+    # 1. FIXED EVALUATION PROTOCOL
+    # --------------------------------------------------------
+
+    st.markdown("#### 1. Evaluation Protocol")
+
+    protocol = {
+        "project_name": "AfriHealth AI",
+        "project_version": "0.1.0",
+        "model": "Logistic Regression",
+        "dataset_source": "UCI Heart Disease Dataset",
+        "uci_repository_id": 45,
+        "task": "Binary classification",
+        "target_definition": (
+            "Class 0: original target equals 0; "
+            "Class 1: original target greater than 0"
+        ),
+        "external_validation_cohort": "Hungarian cohort",
+        "classification_threshold": 0.50,
+        "threshold_analysis": "Exploratory thresholds from 0.10 to 0.90",
+        "age_subgroup_cutoff": 55,
+        "age_subgroups": ["Under 55", "55+"],
+        "sex_encoding_assumption": {
+            "0": "Female",
+            "1": "Male"
+        },
+        "external_validation_frozen": True,
+        "model_retraining_during_external_validation": False,
+        "intended_use": "Research and educational purposes only",
+        "clinical_use_authorized": False
+    }
+
+    expected_features = [
+        "age",
+        "sex",
+        "cp",
+        "trestbps",
+        "chol",
+        "fbs",
+        "restecg",
+        "thalach",
+        "exang",
+        "oldpeak",
+        "slope",
+        "ca",
+        "thal"
+    ]
+
+    protocol["expected_features"] = expected_features
+
+    st.json(protocol)
+
+    # --------------------------------------------------------
+    # 2. SOFTWARE ENVIRONMENT
+    # --------------------------------------------------------
+
+    st.markdown("#### 2. Software Environment")
+
+    environment = {
+        "python_version": platform.python_version(),
+        "python_implementation": platform.python_implementation(),
+        "scikit_learn_version": sklearn.__version__,
+        "numpy_version": np.__version__,
+        "pandas_version": pd.__version__,
+        "platform": platform.platform()
+    }
+
+    try:
+        import streamlit
+        environment["streamlit_version"] = streamlit.__version__
+    except Exception:
+        environment["streamlit_version"] = "Unavailable"
+
+    try:
+        import joblib
+        environment["joblib_version"] = joblib.__version__
+    except Exception:
+        environment["joblib_version"] = "Unavailable"
+
+    st.dataframe(
+        pd.DataFrame(
+            [
+                {"Component": key, "Value": value}
+                for key, value in environment.items()
+            ]
+        ),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.caption(
+        "These versions describe the running Streamlit environment. "
+        "They do not by themselves prove that the original training "
+        "environment has been reproduced."
+    )
+
+    # --------------------------------------------------------
+    # 3. MODEL AND METADATA FILE INTEGRITY
+    # --------------------------------------------------------
+
+    st.markdown("#### 3. Model Artifact Integrity")
+
+    artifact_names = [
+        "afrihealth_model.joblib",
+        "model_metadata.json"
+    ]
+
+    artifact_results = []
+    artifact_hashes = {}
+
+    for artifact_name in artifact_names:
+
+        artifact_path = Path(artifact_name)
+
+        if artifact_path.is_file():
+
+            try:
+                sha256 = hashlib.sha256()
+
+                with artifact_path.open("rb") as artifact_file:
+                    for chunk in iter(
+                        lambda: artifact_file.read(1024 * 1024),
+                        b""
+                    ):
+                        sha256.update(chunk)
+
+                digest = sha256.hexdigest()
+
+                artifact_hashes[artifact_name] = digest
+
+                artifact_results.append({
+                    "Artifact": artifact_name,
+                    "Available": True,
+                    "Size (bytes)": artifact_path.stat().st_size,
+                    "SHA-256": digest,
+                    "Status": "Hash calculated"
+                })
+
+            except Exception as artifact_error:
+
+                artifact_results.append({
+                    "Artifact": artifact_name,
+                    "Available": True,
+                    "Size (bytes)": None,
+                    "SHA-256": None,
+                    "Status": (
+                        "Hash failed: "
+                        + str(artifact_error)
+                    )
+                })
+
+        else:
+
+            artifact_results.append({
+                "Artifact": artifact_name,
+                "Available": False,
+                "Size (bytes)": None,
+                "SHA-256": None,
+                "Status": "File not found in current runtime"
+            })
+
+    st.dataframe(
+        pd.DataFrame(artifact_results),
+        use_container_width=True,
+        hide_index=True
+    )
+
+    st.caption(
+        "A SHA-256 hash identifies the exact file contents. To verify "
+        "that an artifact is unchanged, compare its hash with a "
+        "trusted hash recorded previously. A newly calculated hash "
+        "alone does not prove authenticity."
+    )
+
+    # --------------------------------------------------------
+    # 4. READ MODEL METADATA IF AVAILABLE
+    # --------------------------------------------------------
+
+    st.markdown("#### 4. Model Metadata")
+
+    metadata_path = Path("model_metadata.json")
+    loaded_metadata = {}
+
+    if metadata_path.is_file():
+
+        try:
+
+            with metadata_path.open("r", encoding="utf-8") as metadata_file:
+                loaded_metadata = json.load(metadata_file)
+
+            st.json(loaded_metadata)
+
+        except Exception as metadata_error:
+
+            st.warning(
+                "The metadata file exists but could not be parsed: "
+                + str(metadata_error)
+            )
+
+    else:
+
+        st.info(
+            "model_metadata.json was not found in the current runtime. "
+            "Metadata cannot be independently checked in this session."
+        )
+
+    # --------------------------------------------------------
+    # 5. EXTERNAL COHORT SUMMARY
+    # --------------------------------------------------------
+
+    st.markdown("#### 5. External Validation Cohort Summary")
+
+    manifest_dataset_summary = {
+        "available_in_current_session": False
+    }
+
+    if (
+        "X_external" in globals()
+        and "y_external" in globals()
+    ):
+
+        try:
+
+            external_features = X_external.copy()
+            external_targets = np.asarray(y_external).reshape(-1)
+
+            if len(external_features) != len(external_targets):
+
+                st.error(
+                    "The external feature and target counts do not "
+                    "match. Cohort summary was not generated."
+                )
+
+            else:
+
+                target_counts = pd.Series(
+                    external_targets
+                ).value_counts().sort_index()
+
+                target_distribution = {
+                    str(key): int(value)
+                    for key, value in target_counts.items()
+                }
+
+                dataset_summary = {
+                    "Records": int(len(external_features)),
+                    "Feature columns": int(
+                        len(external_features.columns)
+                    ),
+                    "Class 0 records": int(
+                        np.sum(external_targets == 0)
+                    ),
+                    "Class 1 records": int(
+                        np.sum(external_targets == 1)
+                    ),
+                    "Missing feature values": int(
+                        external_features.isna().sum().sum()
+                    ),
+                    "Duplicate feature rows": int(
+                        external_features.duplicated().sum()
+                    )
+                }
+
+                st.dataframe(
+                    pd.DataFrame([
+                        {
+                            "Measure": key,
+                            "Value": value
+                        }
+                        for key, value in dataset_summary.items()
+                    ]),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                manifest_dataset_summary = {
+                    "available_in_current_session": True,
+                    "record_count": int(len(external_features)),
+                    "feature_count": int(
+                        len(external_features.columns)
+                    ),
+                    "feature_names": [
+                        str(column)
+                        for column in external_features.columns
+                    ],
+                    "target_class_counts": target_distribution,
+                    "missing_feature_values": int(
+                        external_features.isna().sum().sum()
+                    ),
+                    "duplicate_feature_rows": int(
+                        external_features.duplicated().sum()
+                    )
+                }
+
+                if list(external_features.columns) != expected_features:
+
+                    st.warning(
+                        "The external feature columns or their order "
+                        "differ from the documented expected feature "
+                        "list. Confirm the model input order before "
+                        "interpreting this audit."
+                    )
+
+                else:
+
+                    st.success(
+                        "External feature names and ordering match "
+                        "the documented feature list."
+                    )
+
+        except Exception as cohort_error:
+
+            st.warning(
+                "The cohort summary could not be generated: "
+                + str(cohort_error)
+            )
+
+    else:
+
+        st.info(
+            "Run external validation in this session to populate the "
+            "cohort summary. This section does not invent missing results."
+        )
+
+    # --------------------------------------------------------
+    # 6. REPRODUCIBILITY CHECKLIST
+    # --------------------------------------------------------
+
+    st.markdown("#### 6. Research Reproducibility Checklist")
+
+    checklist_items = [
+        "Record the exact model artifact and its SHA-256 hash.",
+        "Preserve the original training dataset and preprocessing procedure.",
+        "Record the train/test split method and random seed from the original training code.",
+        "Record all package versions used during model training.",
+        "Preserve the external cohort source, cleaning rules, and inclusion criteria.",
+        "Keep external validation separate from model fitting and threshold selection.",
+        "Record the classification threshold before interpreting the metrics.",
+        "Document missing data, duplicates, class imbalance, and constant features.",
+        "Report subgroup sizes and avoid unsupported fairness claims.",
+        "Retain the evaluation results, code version, and limitations."
+    ]
+
+    checklist_status = {}
+
+    for index, checklist_item in enumerate(checklist_items):
+
+        checklist_status[checklist_item] = st.checkbox(
+            checklist_item,
+            key=f"phase6e_check_{index}"
+        )
+
+    completed_checks = sum(checklist_status.values())
+    total_checks = len(checklist_items)
+
+    st.progress(completed_checks / total_checks)
+
+    st.write(
+        f"Checklist completed in this session: "
+        f"{completed_checks} of {total_checks}"
+    )
+
+    st.caption(
+        "Checklist selections are not persisted as an audit record. "
+        "They must not be interpreted as proof that an independent "
+        "verification has taken place."
+    )
+
+    # --------------------------------------------------------
+    # 7. KNOWN LIMITATIONS
+    # --------------------------------------------------------
+
+    st.markdown("#### 7. Known Research Limitations")
+
+    known_limitations = [
+        (
+            "The model was developed using a small historical UCI "
+            "Heart Disease dataset."
+        ),
+        (
+            "The Hungarian cohort is an external dataset, but it is "
+            "not a substitute for validation in a contemporary "
+            "Nigerian or African clinical population."
+        ),
+        (
+            "The external cohort's ca feature was reported as constant "
+            "at zero in the existing data-quality audit. The cause "
+            "was not independently verified."
+        ),
+        (
+            "A duplicate row was reported in the external cohort. "
+            "It was not automatically removed."
+        ),
+        (
+            "Subgroup analyses are exploratory and may be affected "
+            "by small sample sizes and class prevalence."
+        ),
+        (
+            "Performance metrics do not establish clinical utility, "
+            "calibration in a new population, or clinical safety."
+        )
+    ]
+
+    for limitation in known_limitations:
+        st.markdown(f"- {limitation}")
+
+    # --------------------------------------------------------
+    # 8. BUILD DOWNLOADABLE RESEARCH MANIFEST
+    # --------------------------------------------------------
+
+    st.markdown("#### 8. Download Research Manifest")
+
+    research_manifest = {
+        "manifest_schema_version": "1.0",
+        "generated_at_utc": datetime.now(
+            timezone.utc
+        ).isoformat(),
+        "project": "AfriHealth AI",
+        "protocol": protocol,
+        "runtime_environment": environment,
+        "artifact_sha256": artifact_hashes,
+        "model_metadata": loaded_metadata,
+        "external_dataset_summary": manifest_dataset_summary,
+        "reproducibility_checklist": checklist_status,
+        "known_limitations": known_limitations,
+        "interpretation": {
+            "research_only": True,
+            "clinical_diagnosis": False,
+            "clinical_validation_claimed": False,
+            "subgroup_fairness_claimed": False
+        }
+    }
+
+    manifest_json = json.dumps(
+        research_manifest,
+        indent=2,
+        ensure_ascii=False,
+        default=str
+    )
+
+    st.download_button(
+        label="Download Phase 6E Research Manifest (JSON)",
+        data=manifest_json.encode("utf-8"),
+        file_name="afrihealth_phase6e_research_manifest.json",
+        mime="application/json",
+        key="phase6e_manifest_download"
+    )
+
+    st.success(
+        "Phase 6E research protocol interface is ready. "
+        "Review the artifact and cohort checks before treating the "
+        "manifest as a completed reproducibility record."
+    )
+
+    st.caption(
+        "The manifest records the current runtime. It does not replace "
+        "the original training code, a locked dependency file, the "
+        "raw-data provenance record, or an independently reproduced "
+        "evaluation."
+    )
 # ============================================================
 # FOOTER
 # ============================================================
