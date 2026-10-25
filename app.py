@@ -3440,7 +3440,499 @@ with st.expander(
             "the external validation CSV in the existing External "
             "Validation Workspace above. Then rerun the app."
         )
-        
+
+# ============================================================
+# PHASE 6D: EXPLORATORY SUBGROUP PERFORMANCE ANALYSIS
+# ============================================================
+
+with st.expander("Phase 6D: Subgroup Analysis", expanded=False):
+
+    st.markdown("""
+    ### Exploratory Subgroup Performance Analysis
+
+    This section evaluates whether model performance differs across
+    selected subgroups in the external validation cohort.
+
+    The analysis is exploratory and is intended to identify potential
+    performance differences that may require further investigation.
+    It does not establish clinical fairness, clinical validity, or
+    generalisability to any population.
+    """)
+
+    # --------------------------------------------------------
+    # Required variables
+    # --------------------------------------------------------
+
+    required_subgroup_variables = [
+        "X_external",
+        "y_external",
+        "external_probabilities"
+    ]
+
+    missing_subgroup_variables = [
+        variable
+        for variable in required_subgroup_variables
+        if variable not in globals()
+    ]
+
+    if missing_subgroup_variables:
+
+        st.warning(
+            "Subgroup analysis is unavailable because the external "
+            "validation results have not been generated in this session."
+        )
+
+    else:
+
+        # ----------------------------------------------------
+        # Prepare external validation data
+        # ----------------------------------------------------
+
+        try:
+
+            subgroup_X = X_external.copy()
+            subgroup_y = np.asarray(y_external).astype(int)
+            subgroup_probabilities = np.asarray(
+                external_probabilities,
+                dtype=float
+            )
+
+            # Validate row alignment
+            if not (
+                len(subgroup_X)
+                == len(subgroup_y)
+                == len(subgroup_probabilities)
+            ):
+                st.error(
+                    "Subgroup analysis stopped because the external "
+                    "features, targets, and probabilities have different "
+                    "numbers of records."
+                )
+
+            else:
+
+                # ------------------------------------------------
+                # Create prediction at the frozen 0.50 threshold
+                # ------------------------------------------------
+
+                subgroup_predictions = (
+                    subgroup_probabilities >= 0.50
+                ).astype(int)
+
+                # ------------------------------------------------
+                # Helper function for subgroup metrics
+                # ------------------------------------------------
+
+                def calculate_subgroup_metrics(
+                    y_true_subgroup,
+                    y_pred_subgroup,
+                    probability_subgroup
+                ):
+
+                    from sklearn.metrics import (
+                        accuracy_score,
+                        balanced_accuracy_score,
+                        confusion_matrix,
+                        precision_score,
+                        recall_score,
+                        f1_score,
+                        roc_auc_score
+                    )
+
+                    n_records = len(y_true_subgroup)
+
+                    if n_records == 0:
+                        return None
+
+                    accuracy = accuracy_score(
+                        y_true_subgroup,
+                        y_pred_subgroup
+                    )
+
+                    balanced_accuracy = balanced_accuracy_score(
+                        y_true_subgroup,
+                        y_pred_subgroup
+                    )
+
+                    precision = precision_score(
+                        y_true_subgroup,
+                        y_pred_subgroup,
+                        zero_division=0
+                    )
+
+                    sensitivity = recall_score(
+                        y_true_subgroup,
+                        y_pred_subgroup,
+                        zero_division=0
+                    )
+
+                    f1 = f1_score(
+                        y_true_subgroup,
+                        y_pred_subgroup,
+                        zero_division=0
+                    )
+
+                    cm = confusion_matrix(
+                        y_true_subgroup,
+                        y_pred_subgroup,
+                        labels=[0, 1]
+                    )
+
+                    tn, fp, fn, tp = cm.ravel()
+
+                    specificity_denominator = tn + fp
+
+                    if specificity_denominator > 0:
+                        specificity = (
+                            tn / specificity_denominator
+                        )
+                    else:
+                        specificity = np.nan
+
+                    positive_cases = int(
+                        np.sum(y_true_subgroup == 1)
+                    )
+
+                    negative_cases = int(
+                        np.sum(y_true_subgroup == 0)
+                    )
+
+                    # ROC-AUC requires both target classes
+                    if len(np.unique(y_true_subgroup)) == 2:
+                        roc_auc = roc_auc_score(
+                            y_true_subgroup,
+                            probability_subgroup
+                        )
+                    else:
+                        roc_auc = np.nan
+
+                    return {
+                        "Records": n_records,
+                        "Class 0": negative_cases,
+                        "Class 1": positive_cases,
+                        "Accuracy": accuracy,
+                        "Balanced Accuracy": balanced_accuracy,
+                        "Sensitivity": sensitivity,
+                        "Specificity": specificity,
+                        "Precision": precision,
+                        "F1": f1,
+                        "ROC-AUC": roc_auc,
+                        "TN": int(tn),
+                        "FP": int(fp),
+                        "FN": int(fn),
+                        "TP": int(tp)
+                    }
+
+                # ------------------------------------------------
+                # Build subgroup dataframe
+                # ------------------------------------------------
+
+                subgroup_df = subgroup_X.copy()
+
+                subgroup_df["__target"] = subgroup_y
+                subgroup_df["__probability"] = (
+                    subgroup_probabilities
+                )
+                subgroup_df["__prediction"] = (
+                    subgroup_predictions
+                )
+
+                # ------------------------------------------------
+                # SEX SUBGROUP ANALYSIS
+                # ------------------------------------------------
+
+                st.markdown("### 1. Sex Subgroup Analysis")
+
+                if "sex" in subgroup_df.columns:
+
+                    sex_labels = subgroup_df["sex"].map({
+                        0: "Female",
+                        1: "Male"
+                    })
+
+                    subgroup_df["Sex Group"] = sex_labels
+
+                    sex_results = []
+
+                    for sex_group in ["Female", "Male"]:
+
+                        mask = (
+                            subgroup_df["Sex Group"]
+                            == sex_group
+                        )
+
+                        y_group = subgroup_df.loc[
+                            mask,
+                            "__target"
+                        ].to_numpy()
+
+                        pred_group = subgroup_df.loc[
+                            mask,
+                            "__prediction"
+                        ].to_numpy()
+
+                        probability_group = subgroup_df.loc[
+                            mask,
+                            "__probability"
+                        ].to_numpy()
+
+                        metrics = calculate_subgroup_metrics(
+                            y_group,
+                            pred_group,
+                            probability_group
+                        )
+
+                        if metrics is not None:
+
+                            metrics["Subgroup"] = sex_group
+
+                            sex_results.append(metrics)
+
+                    if sex_results:
+
+                        sex_results_df = pd.DataFrame(
+                            sex_results
+                        )
+
+                        sex_display = sex_results_df[
+                            [
+                                "Subgroup",
+                                "Records",
+                                "Class 0",
+                                "Class 1",
+                                "Accuracy",
+                                "Balanced Accuracy",
+                                "Sensitivity",
+                                "Specificity",
+                                "Precision",
+                                "F1",
+                                "ROC-AUC"
+                            ]
+                        ].copy()
+
+                        metric_columns = [
+                            "Accuracy",
+                            "Balanced Accuracy",
+                            "Sensitivity",
+                            "Specificity",
+                            "Precision",
+                            "F1",
+                            "ROC-AUC"
+                        ]
+
+                        sex_display[metric_columns] = (
+                            sex_display[metric_columns]
+                            .round(3)
+                        )
+
+                        st.dataframe(
+                            sex_display,
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+                    else:
+
+                        st.warning(
+                            "No usable sex subgroups were available "
+                            "for analysis."
+                        )
+
+                else:
+
+                    st.info(
+                        "The external validation dataset does not "
+                        "contain the required 'sex' feature."
+                    )
+
+                # ------------------------------------------------
+                # AGE SUBGROUP ANALYSIS
+                # ------------------------------------------------
+
+                st.markdown("### 2. Age Subgroup Analysis")
+
+                if "age" in subgroup_df.columns:
+
+                    # Use a transparent and reproducible cutoff.
+                    # 55 years is used to provide two broad age groups
+                    # without creating excessively small categories.
+                    age_cutoff = 55
+
+                    subgroup_df["Age Group"] = np.where(
+                        subgroup_df["age"] < age_cutoff,
+                        f"Under {age_cutoff}",
+                        f"{age_cutoff}+"
+                    )
+
+                    age_results = []
+
+                    age_groups = [
+                        f"Under {age_cutoff}",
+                        f"{age_cutoff}+"
+                    ]
+
+                    for age_group in age_groups:
+
+                        mask = (
+                            subgroup_df["Age Group"]
+                            == age_group
+                        )
+
+                        y_group = subgroup_df.loc[
+                            mask,
+                            "__target"
+                        ].to_numpy()
+
+                        pred_group = subgroup_df.loc[
+                            mask,
+                            "__prediction"
+                        ].to_numpy()
+
+                        probability_group = subgroup_df.loc[
+                            mask,
+                            "__probability"
+                        ].to_numpy()
+
+                        metrics = calculate_subgroup_metrics(
+                            y_group,
+                            pred_group,
+                            probability_group
+                        )
+
+                        if metrics is not None:
+
+                            metrics["Subgroup"] = age_group
+
+                            age_results.append(metrics)
+
+                    if age_results:
+
+                        age_results_df = pd.DataFrame(
+                            age_results
+                        )
+
+                        age_display = age_results_df[
+                            [
+                                "Subgroup",
+                                "Records",
+                                "Class 0",
+                                "Class 1",
+                                "Accuracy",
+                                "Balanced Accuracy",
+                                "Sensitivity",
+                                "Specificity",
+                                "Precision",
+                                "F1",
+                                "ROC-AUC"
+                            ]
+                        ].copy()
+
+                        age_display[metric_columns] = (
+                            age_display[metric_columns]
+                            .round(3)
+                        )
+
+                        st.dataframe(
+                            age_display,
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+                    else:
+
+                        st.warning(
+                            "No usable age subgroups were available "
+                            "for analysis."
+                        )
+
+                else:
+
+                    st.info(
+                        "The external validation dataset does not "
+                        "contain the required 'age' feature."
+                    )
+
+                # ------------------------------------------------
+                # SUBGROUP SAMPLE SIZE WARNING
+                # ------------------------------------------------
+
+                st.markdown("### 3. Subgroup Interpretation")
+
+                st.info("""
+                Subgroup results should be interpreted cautiously.
+                Differences in performance may reflect sample size,
+                class prevalence, dataset composition, measurement
+                differences, or genuine variation in model behaviour.
+
+                Small subgroups can produce unstable estimates.
+                Therefore, subgroup results are exploratory and should
+                not be interpreted as evidence of clinical fairness,
+                discrimination, or population-level validity.
+                """)
+
+                # ------------------------------------------------
+                # DOWNLOAD SUBGROUP RESULTS
+                # ------------------------------------------------
+
+                all_subgroup_results = []
+
+                if "sex_results_df" in locals():
+
+                    sex_export = sex_results_df.copy()
+                    sex_export["Subgroup Type"] = "Sex"
+
+                    all_subgroup_results.append(
+                        sex_export
+                    )
+
+                if "age_results_df" in locals():
+
+                    age_export = age_results_df.copy()
+                    age_export["Subgroup Type"] = "Age"
+
+                    all_subgroup_results.append(
+                        age_export
+                    )
+
+                if all_subgroup_results:
+
+                    subgroup_export = pd.concat(
+                        all_subgroup_results,
+                        ignore_index=True
+                    )
+
+                    csv_subgroup = subgroup_export.to_csv(
+                        index=False
+                    ).encode("utf-8")
+
+                    st.download_button(
+                        label="Download Phase 6D Subgroup Results",
+                        data=csv_subgroup,
+                        file_name=(
+                            "afrihealth_phase6d_subgroup_analysis.csv"
+                        ),
+                        mime="text/csv"
+                    )
+
+                # ------------------------------------------------
+                # RESEARCH NOTE
+                # ------------------------------------------------
+
+                st.caption(
+                    "Phase 6D uses the frozen external-validation "
+                    "predictions at a classification threshold of 0.50. "
+                    "No model retraining or threshold optimisation is "
+                    "performed in this analysis."
+                )
+
+        except Exception as e:
+
+            st.error(
+                "Phase 6D could not complete because of an "
+                "unexpected data or processing error."
+            )
+
+            st.exception(e)
 # ============================================================
 # FOOTER
 # ============================================================
