@@ -3190,6 +3190,256 @@ with st.expander(
             "For a three-way comparison, upload the development, "
             "internal holdout, and external validation CSV files."
         )
+
+
+# ============================================================
+# PHASE 6C: EXPLORATORY CLASSIFICATION THRESHOLD ANALYSIS
+# ============================================================
+
+with st.expander(
+    "Phase 6C: Threshold Analysis",
+    expanded=False
+):
+    st.subheader("Explore classification thresholds")
+
+    st.write(
+        "This analysis examines how different probability "
+        "thresholds affect classification performance. It uses "
+        "the existing external validation predictions and does "
+        "not retrain the model."
+    )
+
+    st.warning(
+        "Research use only. Threshold results on the external "
+        "cohort are exploratory. Do not select a threshold using "
+        "this cohort and then describe its performance as "
+        "independent validation. This tool is not for clinical "
+        "decision-making."
+    )
+
+    # Import metrics locally to avoid relying on existing imports.
+    from sklearn.metrics import (
+        accuracy_score,
+        balanced_accuracy_score,
+        precision_score,
+        recall_score,
+        f1_score,
+        confusion_matrix
+    )
+
+    # These variables are created by the existing external
+    # validation section when a valid CSV has been evaluated.
+    if (
+        "y_external" in locals()
+        and "external_probabilities" in locals()
+    ):
+        threshold_y = np.asarray(y_external).reshape(-1).astype(int)
+        threshold_prob = np.asarray(
+            external_probabilities,
+            dtype=float
+        ).reshape(-1)
+
+        valid_data = (
+            len(threshold_y) == len(threshold_prob)
+            and len(threshold_y) > 0
+            and set(np.unique(threshold_y)).issubset({0, 1})
+            and len(np.unique(threshold_y)) == 2
+            and np.isfinite(threshold_prob).all()
+            and ((threshold_prob >= 0) & (threshold_prob <= 1)).all()
+        )
+
+        if not valid_data:
+            st.error(
+                "The external labels or probabilities are invalid. "
+                "Return to External Validation and check the dataset."
+            )
+        else:
+            thresholds = np.round(
+                np.arange(0.10, 0.901, 0.05),
+                2
+            )
+
+            results = []
+
+            for threshold in thresholds:
+                predicted = (
+                    threshold_prob >= threshold
+                ).astype(int)
+
+                tn, fp, fn, tp = confusion_matrix(
+                    threshold_y,
+                    predicted,
+                    labels=[0, 1]
+                ).ravel()
+
+                sensitivity = recall_score(
+                    threshold_y,
+                    predicted,
+                    zero_division=0
+                )
+
+                specificity = (
+                    tn / (tn + fp)
+                    if (tn + fp) > 0
+                    else 0.0
+                )
+
+                results.append({
+                    "Threshold": threshold,
+                    "Accuracy": accuracy_score(
+                        threshold_y, predicted
+                    ),
+                    "Balanced accuracy": balanced_accuracy_score(
+                        threshold_y, predicted
+                    ),
+                    "Sensitivity": sensitivity,
+                    "Specificity": specificity,
+                    "Precision": precision_score(
+                        threshold_y,
+                        predicted,
+                        zero_division=0
+                    ),
+                    "F1 score": f1_score(
+                        threshold_y,
+                        predicted,
+                        zero_division=0
+                    ),
+                    "True negatives": int(tn),
+                    "False positives": int(fp),
+                    "False negatives": int(fn),
+                    "True positives": int(tp)
+                })
+
+            threshold_df = pd.DataFrame(results)
+
+            st.markdown("### Threshold performance")
+
+            st.caption(
+                "The default classification threshold is 0.50. "
+                "Lower thresholds generally classify more records "
+                "as positive; higher thresholds generally classify "
+                "fewer records as positive."
+            )
+
+            display_df = threshold_df.copy()
+
+            metric_columns = [
+                "Accuracy",
+                "Balanced accuracy",
+                "Sensitivity",
+                "Specificity",
+                "Precision",
+                "F1 score"
+            ]
+
+            display_df[metric_columns] = (
+                display_df[metric_columns].round(3)
+            )
+
+            st.dataframe(
+                display_df,
+                use_container_width=True,
+                hide_index=True
+            )
+
+            st.markdown("### Compare performance across thresholds")
+
+            chart_df = threshold_df.melt(
+                id_vars=["Threshold"],
+                value_vars=[
+                    "Sensitivity",
+                    "Specificity",
+                    "Precision",
+                    "F1 score",
+                    "Balanced accuracy"
+                ],
+                var_name="Metric",
+                value_name="Score"
+            )
+
+            fig_threshold = px.line(
+                chart_df,
+                x="Threshold",
+                y="Score",
+                color="Metric",
+                markers=True,
+                title="Performance metrics by classification threshold"
+            )
+
+            fig_threshold.update_layout(
+                yaxis=dict(
+                    title="Score",
+                    range=[0, 1]
+                ),
+                xaxis=dict(
+                    title="Probability threshold",
+                    tickformat=".2f"
+                ),
+                legend_title_text="Metric"
+            )
+
+            st.plotly_chart(
+                fig_threshold,
+                use_container_width=True
+            )
+
+            # Highlight the existing 0.50 threshold for comparison.
+            baseline = threshold_df.loc[
+                np.isclose(threshold_df["Threshold"], 0.50)
+            ]
+
+            if not baseline.empty:
+                baseline_row = baseline.iloc[0]
+
+                st.markdown(
+                    "### Baseline: threshold 0.50"
+                )
+
+                c1, c2, c3 = st.columns(3)
+
+                c1.metric(
+                    "Sensitivity",
+                    f"{baseline_row['Sensitivity']:.1%}"
+                )
+
+                c2.metric(
+                    "Specificity",
+                    f"{baseline_row['Specificity']:.1%}"
+                )
+
+                c3.metric(
+                    "Balanced accuracy",
+                    f"{baseline_row['Balanced accuracy']:.1%}"
+                )
+
+            st.markdown("### Download results")
+
+            csv_data = threshold_df.to_csv(
+                index=False
+            ).encode("utf-8")
+
+            st.download_button(
+                label="Download threshold analysis CSV",
+                data=csv_data,
+                file_name="afrihealth_phase6c_threshold_analysis.csv",
+                mime="text/csv",
+                key="phase6c_threshold_download"
+            )
+
+            st.info(
+                "No threshold is automatically recommended. "
+                "Any future threshold selection should be based "
+                "on a predefined research objective and assessed "
+                "without reusing the same cohort as an independent "
+                "validation set."
+            )
+
+    else:
+        st.info(
+            "To run this analysis, upload and successfully evaluate "
+            "the external validation CSV in the existing External "
+            "Validation Workspace above. Then rerun the app."
+        )
         
 # ============================================================
 # FOOTER
