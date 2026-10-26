@@ -4488,6 +4488,1355 @@ with st.expander(
         "evaluation."
     )
 # ============================================================
+# PHASE 6F: RESEARCH-READY VALIDATION REPORT
+# ============================================================
+
+with st.expander(
+    "Phase 6F: Research-Ready Validation Report",
+    expanded=False
+):
+
+    st.subheader("Research-Ready Validation Report")
+
+    st.markdown("""
+    This section converts the completed AfriHealth AI evaluation
+    activities into a structured research-oriented validation report.
+
+    The report summarizes model development information, external
+    validation performance, exploratory threshold analysis, subgroup
+    analysis, reproducibility information, and known limitations.
+
+    This report is intended for research and educational documentation.
+    It does not establish clinical validity, clinical safety, or
+    suitability for diagnosis or treatment.
+    """)
+
+    # --------------------------------------------------------
+    # 1. CHECK REQUIRED EXTERNAL VALIDATION OBJECTS
+    # --------------------------------------------------------
+
+    required_report_variables = [
+        "y_external",
+        "external_predictions",
+        "external_probabilities",
+        "external_metrics"
+    ]
+
+    missing_report_variables = [
+        variable
+        for variable in required_report_variables
+        if variable not in globals()
+    ]
+
+    if missing_report_variables:
+
+        st.warning(
+            "Phase 6F cannot generate the validation report because "
+            "the required external validation results are not available "
+            "in the current session."
+        )
+
+        st.caption(
+            "Run the External Validation Workspace successfully first, "
+            "then return to Phase 6F."
+        )
+
+    else:
+
+        try:
+
+            # ------------------------------------------------
+            # 2. PREPARE VALIDATION DATA
+            # ------------------------------------------------
+
+            report_y = np.asarray(
+                y_external
+            ).reshape(-1).astype(int)
+
+            report_predictions = np.asarray(
+                external_predictions
+            ).reshape(-1).astype(int)
+
+            report_probabilities = np.asarray(
+                external_probabilities
+            ).reshape(-1).astype(float)
+
+            report_n = len(report_y)
+
+            validation_data_valid = (
+                report_n > 0
+                and len(report_predictions) == report_n
+                and len(report_probabilities) == report_n
+                and set(np.unique(report_y)).issubset({0, 1})
+                and set(np.unique(report_predictions)).issubset({0, 1})
+                and np.isfinite(report_probabilities).all()
+                and (
+                    (report_probabilities >= 0)
+                    & (report_probabilities <= 1)
+                ).all()
+            )
+
+            if not validation_data_valid:
+
+                st.error(
+                    "Phase 6F stopped because the external validation "
+                    "data failed the required consistency checks."
+                )
+
+            else:
+
+                # ------------------------------------------------
+                # 3. REPORT HEADER
+                # ------------------------------------------------
+
+                report_timestamp = datetime.now(
+                    timezone.utc
+                ).isoformat()
+
+                st.success(
+                    "Research-ready validation report generated "
+                    "from the frozen external-validation results."
+                )
+
+                st.caption(
+                    f"Report generated: {report_timestamp}"
+                )
+
+                # ------------------------------------------------
+                # 4. RESEARCH SUMMARY
+                # ------------------------------------------------
+
+                st.markdown("### 1. Research Summary")
+
+                st.write(
+                    f"""
+                    AfriHealth AI is an AI-assisted cardiovascular
+                    disease risk screening research prototype based on
+                    a Logistic Regression model trained using the UCI
+                    Heart Disease dataset.
+
+                    The selected model was evaluated on an external
+                    Hungarian cohort containing {report_n} records.
+
+                    The external validation was performed using the
+                    frozen model without model retraining. The default
+                    classification threshold was 0.50.
+                    """
+                )
+
+                st.info(
+                    """
+                    Primary research interpretation:
+
+                    The external evaluation provides evidence that the
+                    model retains measurable predictive discrimination
+                    on an independent historical cohort. However, the
+                    evaluation does not establish clinical validity,
+                    clinical safety, population-level generalisability,
+                    or suitability for deployment in Nigerian or other
+                    African clinical settings.
+                    """
+                )
+
+                # ------------------------------------------------
+                # 5. MODEL AND DATASET DESCRIPTION
+                # ------------------------------------------------
+
+                st.markdown("### 2. Model and Dataset")
+
+                report_model = metadata.get(
+                    "selected_model",
+                    "Logistic Regression"
+                )
+
+                report_version = metadata.get(
+                    "version",
+                    metadata.get(
+                        "project_version",
+                        "0.1.0"
+                    )
+                )
+
+                report_cv_auc = metadata.get(
+                    "cross_validation_roc_auc",
+                    metadata.get(
+                        "cv_roc_auc",
+                        None
+                    )
+                )
+
+                report_train_records = metadata.get(
+                    "train_records",
+                    "N/A"
+                )
+
+                report_holdout_records = metadata.get(
+                    "test_records",
+                    metadata.get(
+                        "holdout_records",
+                        "N/A"
+                    )
+                )
+
+                report_dataset = metadata.get(
+                    "dataset",
+                    "UCI Heart Disease Dataset"
+                )
+
+                report_model_table = pd.DataFrame(
+                    [
+                        [
+                            "Project",
+                            "AfriHealth AI"
+                        ],
+                        [
+                            "Version",
+                            report_version
+                        ],
+                        [
+                            "Selected model",
+                            report_model
+                        ],
+                        [
+                            "Dataset",
+                            report_dataset
+                        ],
+                        [
+                            "UCI repository ID",
+                            45
+                        ],
+                        [
+                            "Task",
+                            "Binary classification"
+                        ],
+                        [
+                            "Training records",
+                            report_train_records
+                        ],
+                        [
+                            "Internal holdout records",
+                            report_holdout_records
+                        ],
+                        [
+                            "External validation cohort",
+                            "Hungarian cohort"
+                        ],
+                        [
+                            "External validation records",
+                            report_n
+                        ],
+                        [
+                            "Classification threshold",
+                            0.50
+                        ]
+                    ],
+                    columns=[
+                        "Item",
+                        "Value"
+                    ]
+                )
+
+                st.dataframe(
+                    report_model_table,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                # ------------------------------------------------
+                # 6. DEVELOPMENT EVIDENCE
+                # ------------------------------------------------
+
+                st.markdown("### 3. Development Evidence")
+
+                development_rows = []
+
+                if report_cv_auc is not None:
+
+                    try:
+                        development_rows.append(
+                            [
+                                "Cross-validation ROC-AUC",
+                                f"{float(report_cv_auc):.3f}"
+                            ]
+                        )
+                    except Exception:
+
+                        development_rows.append(
+                            [
+                                "Cross-validation ROC-AUC",
+                                str(report_cv_auc)
+                            ]
+                        )
+
+                development_rows.extend(
+                    [
+                        [
+                            "Selected model",
+                            str(report_model)
+                        ],
+                        [
+                            "Training records",
+                            str(report_train_records)
+                        ],
+                        [
+                            "Internal holdout records",
+                            str(report_holdout_records)
+                        ],
+                        [
+                            "External validation retraining",
+                            "No"
+                        ],
+                        [
+                            "External validation threshold",
+                            "0.50"
+                        ]
+                    ]
+                )
+
+                development_df = pd.DataFrame(
+                    development_rows,
+                    columns=[
+                        "Development Evidence",
+                        "Value"
+                    ]
+                )
+
+                st.dataframe(
+                    development_df,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                # ------------------------------------------------
+                # 7. EXTERNAL VALIDATION PERFORMANCE
+                # ------------------------------------------------
+
+                st.markdown("### 4. External Validation Performance")
+
+                metric_order = [
+                    "Accuracy",
+                    "Balanced Accuracy",
+                    "Sensitivity",
+                    "Specificity",
+                    "Precision",
+                    "F1 Score",
+                    "ROC-AUC",
+                    "Brier Score"
+                ]
+
+                external_metric_rows = []
+
+                for metric_name in metric_order:
+
+                    if metric_name in external_metrics:
+
+                        value = external_metrics[
+                            metric_name
+                        ]
+
+                        try:
+                            value_display = f"{float(value):.3f}"
+                        except Exception:
+                            value_display = str(value)
+
+                        external_metric_rows.append(
+                            [
+                                metric_name,
+                                value_display
+                            ]
+                        )
+
+                external_metric_df = pd.DataFrame(
+                    external_metric_rows,
+                    columns=[
+                        "Metric",
+                        "External Validation"
+                    ]
+                )
+
+                st.dataframe(
+                    external_metric_df,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                # ------------------------------------------------
+                # 8. KEY PERFORMANCE METRICS
+                # ------------------------------------------------
+
+                key_cols = st.columns(4)
+
+                with key_cols[0]:
+                    st.metric(
+                        "External ROC-AUC",
+                        f"{external_metrics['ROC-AUC']:.3f}"
+                    )
+
+                with key_cols[1]:
+                    st.metric(
+                        "Sensitivity",
+                        f"{external_metrics['Sensitivity']:.3f}"
+                    )
+
+                with key_cols[2]:
+                    st.metric(
+                        "Specificity",
+                        f"{external_metrics['Specificity']:.3f}"
+                    )
+
+                with key_cols[3]:
+                    st.metric(
+                        "Brier Score",
+                        f"{external_metrics['Brier Score']:.3f}"
+                    )
+
+                # ------------------------------------------------
+                # 9. BOOTSTRAP CONFIDENCE INTERVALS
+                # ------------------------------------------------
+
+                st.markdown(
+                    "### 5. Bootstrap 95% Confidence Intervals"
+                )
+
+                st.caption(
+                    "Confidence intervals are estimated from the frozen "
+                    "external-validation predictions using a fixed "
+                    "bootstrap seed. They are descriptive research "
+                    "estimates and do not compensate for dataset "
+                    "representativeness limitations."
+                )
+
+                from sklearn.metrics import (
+                    accuracy_score,
+                    balanced_accuracy_score,
+                    precision_score,
+                    recall_score,
+                    f1_score,
+                    roc_auc_score,
+                    brier_score_loss
+                )
+
+                rng = np.random.default_rng(42)
+
+                bootstrap_iterations = 2000
+
+                bootstrap_values = {
+                    "Accuracy": [],
+                    "Balanced Accuracy": [],
+                    "Sensitivity": [],
+                    "Specificity": [],
+                    "Precision": [],
+                    "F1 Score": [],
+                    "ROC-AUC": [],
+                    "Brier Score": []
+                }
+
+                for _ in range(
+                    bootstrap_iterations
+                ):
+
+                    sample_indices = rng.integers(
+                        0,
+                        report_n,
+                        report_n
+                    )
+
+                    y_b = report_y[
+                        sample_indices
+                    ]
+
+                    pred_b = report_predictions[
+                        sample_indices
+                    ]
+
+                    prob_b = report_probabilities[
+                        sample_indices
+                    ]
+
+                    try:
+
+                        tn, fp, fn, tp = confusion_matrix(
+                            y_b,
+                            pred_b,
+                            labels=[0, 1]
+                        ).ravel()
+
+                        specificity_b = (
+                            tn / (tn + fp)
+                            if (tn + fp) > 0
+                            else np.nan
+                        )
+
+                        bootstrap_values[
+                            "Accuracy"
+                        ].append(
+                            accuracy_score(
+                                y_b,
+                                pred_b
+                            )
+                        )
+
+                        bootstrap_values[
+                            "Balanced Accuracy"
+                        ].append(
+                            balanced_accuracy_score(
+                                y_b,
+                                pred_b
+                            )
+                        )
+
+                        bootstrap_values[
+                            "Sensitivity"
+                        ].append(
+                            recall_score(
+                                y_b,
+                                pred_b,
+                                zero_division=0
+                            )
+                        )
+
+                        bootstrap_values[
+                            "Specificity"
+                        ].append(
+                            specificity_b
+                        )
+
+                        bootstrap_values[
+                            "Precision"
+                        ].append(
+                            precision_score(
+                                y_b,
+                                pred_b,
+                                zero_division=0
+                            )
+                        )
+
+                        bootstrap_values[
+                            "F1 Score"
+                        ].append(
+                            f1_score(
+                                y_b,
+                                pred_b,
+                                zero_division=0
+                            )
+                        )
+
+                        if len(
+                            np.unique(y_b)
+                        ) == 2:
+
+                            bootstrap_values[
+                                "ROC-AUC"
+                            ].append(
+                                roc_auc_score(
+                                    y_b,
+                                    prob_b
+                                )
+                            )
+
+                        else:
+
+                            bootstrap_values[
+                                "ROC-AUC"
+                            ].append(
+                                np.nan
+                            )
+
+                        bootstrap_values[
+                            "Brier Score"
+                        ].append(
+                            brier_score_loss(
+                                y_b,
+                                prob_b
+                            )
+                        )
+
+                    except Exception:
+
+                        continue
+
+                confidence_rows = []
+
+                for metric_name in metric_order:
+
+                    values = np.asarray(
+                        bootstrap_values[
+                            metric_name
+                        ],
+                        dtype=float
+                    )
+
+                    values = values[
+                        np.isfinite(values)
+                    ]
+
+                    if len(values) > 20:
+
+                        lower = np.percentile(
+                            values,
+                            2.5
+                        )
+
+                        upper = np.percentile(
+                            values,
+                            97.5
+                        )
+
+                        point_value = external_metrics[
+                            metric_name
+                        ]
+
+                        confidence_rows.append(
+                            [
+                                metric_name,
+                                f"{float(point_value):.3f}",
+                                f"{lower:.3f}",
+                                f"{upper:.3f}",
+                                len(values)
+                            ]
+                        )
+
+                confidence_df = pd.DataFrame(
+                    confidence_rows,
+                    columns=[
+                        "Metric",
+                        "Point Estimate",
+                        "95% CI Lower",
+                        "95% CI Upper",
+                        "Bootstrap Samples"
+                    ]
+                )
+
+                st.dataframe(
+                    confidence_df,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                # ------------------------------------------------
+                # 10. VALIDATION INTERPRETATION
+                # ------------------------------------------------
+
+                st.markdown("### 6. Validation Interpretation")
+
+                auc_value = float(
+                    external_metrics["ROC-AUC"]
+                )
+
+                sensitivity_value = float(
+                    external_metrics["Sensitivity"]
+                )
+
+                specificity_value = float(
+                    external_metrics["Specificity"]
+                )
+
+                brier_value = float(
+                    external_metrics["Brier Score"]
+                )
+
+                interpretation_points = []
+
+                if auc_value >= 0.80:
+
+                    interpretation_points.append(
+                        "The external cohort shows substantial "
+                        "discriminative performance based on ROC-AUC."
+                    )
+
+                elif auc_value >= 0.70:
+
+                    interpretation_points.append(
+                        "The external cohort shows moderate "
+                        "discriminative performance based on ROC-AUC."
+                    )
+
+                else:
+
+                    interpretation_points.append(
+                        "The external cohort shows limited "
+                        "discriminative performance based on ROC-AUC."
+                    )
+
+                interpretation_points.append(
+                    f"Sensitivity at the frozen 0.50 threshold was "
+                    f"{sensitivity_value:.3f}."
+                )
+
+                interpretation_points.append(
+                    f"Specificity at the frozen 0.50 threshold was "
+                    f"{specificity_value:.3f}."
+                )
+
+                interpretation_points.append(
+                    f"The observed Brier score was "
+                    f"{brier_value:.3f}. This provides a measure of "
+                    f"probabilistic prediction error but does not by "
+                    f"itself establish clinical calibration."
+                )
+
+                interpretation_points.append(
+                    "The external cohort provides useful evidence for "
+                    "research evaluation but cannot establish "
+                    "performance in Nigerian or broader African "
+                    "populations."
+                )
+
+                for point in interpretation_points:
+
+                    st.markdown(
+                        f"- {point}"
+                    )
+
+                # ------------------------------------------------
+                # 11. THRESHOLD ANALYSIS SUMMARY
+                # ------------------------------------------------
+
+                st.markdown(
+                    "### 7. Threshold Analysis Interpretation"
+                )
+
+                st.write(
+                    """
+                    Phase 6C evaluated classification thresholds from
+                    0.10 to 0.90 using the frozen external-validation
+                    probabilities.
+
+                    The threshold analysis is exploratory. It should
+                    not be interpreted as a basis for selecting a
+                    clinically optimal threshold because the same
+                    external cohort was used for evaluation.
+                    """
+                )
+
+                threshold_results_available = (
+                    "threshold_df" in globals()
+                    and isinstance(
+                        threshold_df,
+                        pd.DataFrame
+                    )
+                    and not threshold_df.empty
+                )
+
+                if threshold_results_available:
+
+                    threshold_display = threshold_df.copy()
+
+                    threshold_metric_columns = [
+                        column
+                        for column in [
+                            "Accuracy",
+                            "Balanced accuracy",
+                            "Sensitivity",
+                            "Specificity",
+                            "Precision",
+                            "F1 score"
+                        ]
+                        if column in threshold_display.columns
+                    ]
+
+                    if threshold_metric_columns:
+
+                        threshold_display[
+                            threshold_metric_columns
+                        ] = threshold_display[
+                            threshold_metric_columns
+                        ].round(3)
+
+                    st.dataframe(
+                        threshold_display,
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+                else:
+
+                    st.info(
+                        "Threshold analysis results were not available "
+                        "in the current session."
+                    )
+
+                # ------------------------------------------------
+                # 12. SUBGROUP ANALYSIS SUMMARY
+                # ------------------------------------------------
+
+                st.markdown(
+                    "### 8. Subgroup Analysis Interpretation"
+                )
+
+                st.write(
+                    """
+                    Phase 6D examined selected sex and age subgroups
+                    using the frozen external-validation predictions
+                    at the 0.50 classification threshold.
+
+                    These analyses are exploratory. Differences between
+                    subgroup estimates may reflect sample size, class
+                    prevalence, dataset composition, measurement
+                    differences, or genuine differences in model
+                    behaviour.
+                    """
+                )
+
+                subgroup_results_available = (
+                    (
+                        "sex_results_df" in globals()
+                        and isinstance(
+                            sex_results_df,
+                            pd.DataFrame
+                        )
+                    )
+                    or
+                    (
+                        "age_results_df" in globals()
+                        and isinstance(
+                            age_results_df,
+                            pd.DataFrame
+                        )
+                    )
+                )
+
+                if subgroup_results_available:
+
+                    st.success(
+                        "Subgroup analysis results are available "
+                        "from Phase 6D."
+                    )
+
+                    if (
+                        "sex_results_df" in globals()
+                        and isinstance(
+                            sex_results_df,
+                            pd.DataFrame
+                        )
+                        and not sex_results_df.empty
+                    ):
+
+                        st.markdown("**Sex subgroup results**")
+
+                        st.dataframe(
+                            sex_results_df.round(3),
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+                    if (
+                        "age_results_df" in globals()
+                        and isinstance(
+                            age_results_df,
+                            pd.DataFrame
+                        )
+                        and not age_results_df.empty
+                    ):
+
+                        st.markdown("**Age subgroup results**")
+
+                        st.dataframe(
+                            age_results_df.round(3),
+                            use_container_width=True,
+                            hide_index=True
+                        )
+
+                else:
+
+                    st.info(
+                        "No subgroup result tables are available "
+                        "in the current session."
+                    )
+
+                # ------------------------------------------------
+                # 13. DATA QUALITY FINDINGS
+                # ------------------------------------------------
+
+                st.markdown(
+                    "### 9. External Cohort Data-Quality Findings"
+                )
+
+                data_quality_rows = [
+                    [
+                        "External cohort",
+                        "Hungarian cohort"
+                    ],
+                    [
+                        "Records evaluated",
+                        report_n
+                    ],
+                    [
+                        "Missing values",
+                        "None reported in Phase 6B"
+                    ],
+                    [
+                        "ca feature",
+                        "Constant at zero"
+                    ],
+                    [
+                        "Duplicate row",
+                        "One duplicate reported"
+                    ],
+                    [
+                        "External cohort used for retraining",
+                        "No"
+                    ]
+                ]
+
+                data_quality_df = pd.DataFrame(
+                    data_quality_rows,
+                    columns=[
+                        "Data Quality Item",
+                        "Finding"
+                    ]
+                )
+
+                st.dataframe(
+                    data_quality_df,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                st.warning(
+                    """
+                    The constant `ca` feature and reported duplicate
+                    record are important limitations of the external
+                    cohort. These findings should be disclosed in any
+                    research manuscript or presentation using these
+                    results.
+                    """
+                )
+
+                # ------------------------------------------------
+                # 14. REPRODUCIBILITY STATUS
+                # ------------------------------------------------
+
+                st.markdown(
+                    "### 10. Reproducibility Status"
+                )
+
+                reproducibility_rows = [
+                    [
+                        "Model artifact available",
+                        "Yes"
+                    ],
+                    [
+                        "Model metadata available",
+                        "Yes"
+                    ],
+                    [
+                        "External validation frozen",
+                        "Yes"
+                    ],
+                    [
+                        "Model retrained during validation",
+                        "No"
+                    ],
+                    [
+                        "Classification threshold documented",
+                        "Yes, 0.50"
+                    ],
+                    [
+                        "Threshold analysis documented",
+                        "Yes"
+                    ],
+                    [
+                        "Subgroup analysis documented",
+                        "Yes"
+                    ],
+                    [
+                        "Research manifest available",
+                        "Yes, Phase 6E"
+                    ],
+                    [
+                        "Independent Nigerian/African validation",
+                        "Not performed"
+                    ]
+                ]
+
+                reproducibility_df = pd.DataFrame(
+                    reproducibility_rows,
+                    columns=[
+                        "Reproducibility Item",
+                        "Status"
+                    ]
+                )
+
+                st.dataframe(
+                    reproducibility_df,
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+                # ------------------------------------------------
+                # 15. RESEARCH LIMITATIONS
+                # ------------------------------------------------
+
+                st.markdown(
+                    "### 11. Research Limitations"
+                )
+
+                report_limitations = [
+                    (
+                        "The development dataset is relatively small "
+                        "and originates from the historical UCI Heart "
+                        "Disease dataset."
+                    ),
+                    (
+                        "The external validation cohort is historical "
+                        "and does not represent a contemporary Nigerian "
+                        "or African clinical population."
+                    ),
+                    (
+                        "The external cohort contains a constant "
+                        "`ca` feature, limiting evaluation of that "
+                        "predictor."
+                    ),
+                    (
+                        "One duplicate record was reported in the "
+                        "external cohort and was not automatically "
+                        "removed."
+                    ),
+                    (
+                        "Subgroup analyses are exploratory and may "
+                        "contain unstable estimates because of subgroup "
+                        "sample sizes."
+                    ),
+                    (
+                        "Threshold analysis is exploratory and was "
+                        "performed on the same external cohort used "
+                        "for validation."
+                    ),
+                    (
+                        "The evaluation does not establish clinical "
+                        "utility, clinical safety, or clinical "
+                        "calibration."
+                    ),
+                    (
+                        "No validation has been performed on a "
+                        "representative Nigerian or African clinical "
+                        "population."
+                    )
+                ]
+
+                for limitation in report_limitations:
+
+                    st.markdown(
+                        f"- {limitation}"
+                    )
+
+                # ------------------------------------------------
+                # 16. RESPONSIBLE AI INTERPRETATION
+                # ------------------------------------------------
+
+                st.markdown(
+                    "### 12. Responsible AI Interpretation"
+                )
+
+                st.info(
+                    """
+                    AfriHealth AI should currently be interpreted as
+                    an educational and research prototype.
+
+                    The results should not be used to diagnose disease,
+                    determine treatment, replace clinicians, or make
+                    autonomous medical decisions.
+
+                    Before any real-world clinical consideration,
+                    further validation would be required using
+                    appropriately designed contemporary datasets,
+                    including representative Nigerian and African
+                    populations, external calibration assessment,
+                    prospective evaluation, clinical review, and
+                    appropriate regulatory and ethical oversight.
+                    """
+                )
+
+                # ------------------------------------------------
+                # 17. OVERALL VALIDATION CONCLUSION
+                # ------------------------------------------------
+
+                st.markdown(
+                    "### 13. Overall Validation Conclusion"
+                )
+
+                st.success(
+                    f"""
+                    The AfriHealth AI Logistic Regression model achieved
+                    an external ROC-AUC of {auc_value:.3f} on the
+                    evaluated Hungarian cohort.
+
+                    The external evaluation demonstrates measurable
+                    predictive discrimination outside the original
+                    development data and therefore provides useful
+                    research evidence for continued investigation.
+
+                    However, the available evidence is not sufficient
+                    to claim clinical validity, clinical safety,
+                    population-level generalisability, or suitability
+                    for deployment in Nigerian or African healthcare
+                    settings.
+
+                    The appropriate next step is broader independent
+                    validation using representative contemporary
+                    populations and a predefined research protocol.
+                    """
+                )
+
+                # ------------------------------------------------
+                # 18. BUILD DOWNLOADABLE MARKDOWN REPORT
+                # ------------------------------------------------
+
+                st.markdown(
+                    "### 14. Download Research Report"
+                )
+
+                markdown_lines = [
+                    "# AfriHealth AI Research-Ready Validation Report",
+                    "",
+                    f"Report generated: {report_timestamp}",
+                    "",
+                    "## 1. Research Summary",
+                    "",
+                    (
+                        "AfriHealth AI is an AI-assisted cardiovascular "
+                        "disease risk screening research prototype "
+                        "based on Logistic Regression and the UCI Heart "
+                        "Disease dataset."
+                    ),
+                    "",
+                    (
+                        f"External validation was performed on "
+                        f"{report_n} records from the Hungarian cohort "
+                        "using the frozen model and a 0.50 classification "
+                        "threshold."
+                    ),
+                    "",
+                    "## 2. Model and Dataset",
+                    "",
+                    f"- Project: AfriHealth AI",
+                    f"- Version: {report_version}",
+                    f"- Model: {report_model}",
+                    f"- Dataset: {report_dataset}",
+                    f"- UCI repository ID: 45",
+                    f"- Training records: {report_train_records}",
+                    f"- Internal holdout records: {report_holdout_records}",
+                    f"- External validation records: {report_n}",
+                    f"- External validation retraining: No",
+                    f"- Classification threshold: 0.50",
+                    "",
+                    "## 3. External Validation Performance",
+                    ""
+                ]
+
+                for metric_name in metric_order:
+
+                    if metric_name in external_metrics:
+
+                        markdown_lines.append(
+                            f"- {metric_name}: "
+                            f"{float(external_metrics[metric_name]):.3f}"
+                        )
+
+                markdown_lines.extend(
+                    [
+                        "",
+                        "## 4. Bootstrap 95% Confidence Intervals",
+                        ""
+                    ]
+                )
+
+                for row in confidence_rows:
+
+                    markdown_lines.append(
+                        f"- {row[0]}: {row[1]} "
+                        f"(95% CI {row[2]}–{row[3]})"
+                    )
+
+                markdown_lines.extend(
+                    [
+                        "",
+                        "## 5. Threshold Analysis",
+                        "",
+                        (
+                            "Threshold analysis from 0.10 to 0.90 "
+                            "was exploratory and used the frozen "
+                            "external-validation predictions."
+                        ),
+                        "",
+                        "## 6. Subgroup Analysis",
+                        "",
+                        (
+                            "Sex and age subgroup analyses were "
+                            "exploratory and were performed using "
+                            "the frozen external-validation results."
+                        ),
+                        "",
+                        "## 7. Data-Quality Findings",
+                        "",
+                        "- No missing values were reported in the external cohort.",
+                        "- The `ca` feature was constant at zero.",
+                        "- One duplicate row was reported.",
+                        "- The model was not retrained on the external cohort.",
+                        "",
+                        "## 8. Reproducibility",
+                        "",
+                        "- Model artifact available.",
+                        "- Model metadata available.",
+                        "- External validation frozen.",
+                        "- Threshold documented.",
+                        "- Threshold analysis documented.",
+                        "- Subgroup analysis documented.",
+                        "- Phase 6E research manifest available.",
+                        "",
+                        "## 9. Limitations",
+                        ""
+                    ]
+                )
+
+                for limitation in report_limitations:
+
+                    markdown_lines.append(
+                        f"- {limitation}"
+                    )
+
+                markdown_lines.extend(
+                    [
+                        "",
+                        "## 10. Responsible Interpretation",
+                        "",
+                        (
+                            "AfriHealth AI is a research and educational "
+                            "prototype. It is not a medical diagnostic "
+                            "system and should not be used to make "
+                            "autonomous clinical decisions."
+                        ),
+                        "",
+                        "## 11. Overall Conclusion",
+                        "",
+                        (
+                            f"The model achieved an external ROC-AUC "
+                            f"of {auc_value:.3f} on the evaluated "
+                            "Hungarian cohort. The result provides "
+                            "useful evidence for continued research "
+                            "but does not establish clinical validity "
+                            "or generalisability to Nigerian or "
+                            "African populations."
+                        ),
+                        ""
+                    ]
+                )
+
+                markdown_report = "\n".join(
+                    markdown_lines
+                )
+
+                st.download_button(
+                    label=(
+                        "Download Phase 6F Research Report "
+                        "(Markdown)"
+                    ),
+                    data=markdown_report.encode("utf-8"),
+                    file_name=(
+                        "afrihealth_phase6f_validation_report.md"
+                    ),
+                    mime="text/markdown",
+                    key="phase6f_markdown_report"
+                )
+
+                # ------------------------------------------------
+                # 19. DOWNLOAD STRUCTURED JSON SUMMARY
+                # ------------------------------------------------
+
+                research_summary = {
+                    "report_schema_version": "1.0",
+                    "generated_at_utc": report_timestamp,
+                    "project": "AfriHealth AI",
+                    "project_version": str(report_version),
+                    "model": str(report_model),
+                    "dataset": str(report_dataset),
+                    "uci_repository_id": 45,
+                    "external_validation": {
+                        "cohort": "Hungarian cohort",
+                        "records": int(report_n),
+                        "classification_threshold": 0.50,
+                        "model_retraining": False,
+                        "metrics": {
+                            key: float(value)
+                            for key, value in external_metrics.items()
+                            if isinstance(
+                                value,
+                                (int, float, np.integer, np.floating)
+                            )
+                        }
+                    },
+                    "bootstrap": {
+                        "iterations": bootstrap_iterations,
+                        "random_seed": 42,
+                        "confidence_level": 0.95
+                    },
+                    "limitations": report_limitations,
+                    "interpretation": {
+                        "research_only": True,
+                        "clinical_diagnosis": False,
+                        "clinical_validation_claimed": False,
+                        "nigerian_population_validation": False,
+                        "african_population_validation": False
+                    }
+                }
+
+                research_summary_json = json.dumps(
+                    research_summary,
+                    indent=2,
+                    ensure_ascii=False,
+                    default=str
+                )
+
+                st.download_button(
+                    label=(
+                        "Download Phase 6F Research Summary "
+                        "(JSON)"
+                    ),
+                    data=research_summary_json.encode(
+                        "utf-8"
+                    ),
+                    file_name=(
+                        "afrihealth_phase6f_validation_summary.json"
+                    ),
+                    mime="application/json",
+                    key="phase6f_json_report"
+                )
+
+                # ------------------------------------------------
+                # 20. RESEARCH STATUS
+                # ------------------------------------------------
+
+                st.divider()
+
+                st.success(
+                    """
+                    Phase 6F complete.
+
+                    AfriHealth AI now has a consolidated
+                    research-ready validation report covering
+                    external validation, confidence intervals,
+                    threshold analysis, subgroup analysis,
+                    data-quality findings, reproducibility,
+                    limitations, and responsible interpretation.
+                    """
+                )
+
+                st.caption(
+                    "Phase 6F is a reporting and documentation layer. "
+                    "It does not retrain the model, modify predictions, "
+                    "or establish clinical validity."
+                )
+
+        except Exception as phase6f_error:
+
+            st.error(
+                "Phase 6F could not generate the research-ready "
+                "validation report."
+            )
+
+            st.exception(phase6f_error)
+# ============================================================
 # FOOTER
 # ============================================================
 
