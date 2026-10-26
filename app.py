@@ -4011,7 +4011,43 @@ with st.expander(
 
     protocol["expected_features"] = expected_features
 
-    st.json(protocol)
+    protocol_rows = [
+        ("Project", protocol["project_name"]),
+        ("Version", protocol["project_version"]),
+        ("Model", protocol["model"]),
+        ("Dataset source", protocol["dataset_source"]),
+        ("UCI repository ID", protocol["uci_repository_id"]),
+        ("Task", protocol["task"]),
+        ("Target definition", protocol["target_definition"]),
+        ("External validation cohort", protocol["external_validation_cohort"]),
+        ("Classification threshold", protocol["classification_threshold"]),
+        ("Threshold analysis", protocol["threshold_analysis"]),
+        ("Age subgroup cutoff", protocol["age_subgroup_cutoff"]),
+        ("Age subgroups", ", ".join(protocol["age_subgroups"])),
+        ("Sex encoding", "0 = Female; 1 = Male"),
+        (
+            "External validation frozen",
+            "Yes" if protocol["external_validation_frozen"] else "No",
+        ),
+        (
+            "Model retraining during external validation",
+            "No" if not protocol["model_retraining_during_external_validation"] else "Yes",
+        ),
+        ("Intended use", protocol["intended_use"]),
+        (
+            "Clinical use authorized",
+            "No" if not protocol["clinical_use_authorized"] else "Yes",
+        ),
+    ]
+
+    st.dataframe(
+        pd.DataFrame(protocol_rows, columns=["Protocol Item", "Value"]),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.markdown("**Expected input features**")
+    st.write(", ".join(expected_features))
 
     # --------------------------------------------------------
     # 2. SOFTWARE ENVIRONMENT
@@ -4151,7 +4187,37 @@ with st.expander(
             with metadata_path.open("r", encoding="utf-8") as metadata_file:
                 loaded_metadata = json.load(metadata_file)
 
-            st.json(loaded_metadata)
+            metadata_rows = [
+                ("Project", loaded_metadata.get("project", "N/A")),
+                ("Version", loaded_metadata.get("version", "N/A")),
+                ("Selected model", loaded_metadata.get("selected_model", "N/A")),
+                ("Selection metric", loaded_metadata.get("selection_metric", "N/A")),
+                (
+                    "Cross-validation ROC-AUC",
+                    loaded_metadata.get("cross_validation_roc_auc", "N/A"),
+                ),
+                ("Positive class", loaded_metadata.get("positive_class", "N/A")),
+                ("Dataset", loaded_metadata.get("dataset", "N/A")),
+                ("Training records", loaded_metadata.get("training_records", "N/A")),
+                ("Test records", loaded_metadata.get("test_records", "N/A")),
+                (
+                    "scikit-learn version",
+                    loaded_metadata.get("scikit_learn_version", "N/A"),
+                ),
+                ("Created at (UTC)", loaded_metadata.get("created_at_utc", "N/A")),
+                ("Intended use", loaded_metadata.get("intended_use", "N/A")),
+            ]
+
+            st.dataframe(
+                pd.DataFrame(metadata_rows, columns=["Metadata Item", "Value"]),
+                use_container_width=True,
+                hide_index=True,
+            )
+
+            metadata_features = loaded_metadata.get("input_features", [])
+            if metadata_features:
+                st.markdown("**Input features**")
+                st.write(", ".join(str(feature) for feature in metadata_features))
 
         except Exception as metadata_error:
 
