@@ -3953,22 +3953,19 @@ with st.expander(
 
     import sklearn
 
-    st.markdown("""
-    ### Reproducibility and Research Protocol
-
-    This section documents the evaluation configuration, available
-    software and model artifacts, and the known limitations of the
-    AfriHealth AI research evaluation.
-
-    This is a documentation and audit utility. It does not retrain
-    the model, alter predictions, or establish clinical validity.
-    """)
+    st.info(
+        "This section documents the evaluation configuration, available "
+        "software and model artifacts, and known limitations of the "
+        "AfriHealth AI research evaluation. It is a documentation and "
+        "audit utility. It does not retrain the model, alter predictions, "
+        "or establish clinical validity."
+    )
 
     # --------------------------------------------------------
     # 1. FIXED EVALUATION PROTOCOL
     # --------------------------------------------------------
 
-    st.markdown("#### 1. Evaluation Protocol")
+    st.subheader("1. Evaluation Protocol")
 
     protocol = {
         "project_name": "AfriHealth AI",
@@ -4020,7 +4017,7 @@ with st.expander(
     # 2. SOFTWARE ENVIRONMENT
     # --------------------------------------------------------
 
-    st.markdown("#### 2. Software Environment")
+    st.subheader("2. Software Environment")
 
     environment = {
         "python_version": platform.python_version(),
@@ -4064,7 +4061,7 @@ with st.expander(
     # 3. MODEL AND METADATA FILE INTEGRITY
     # --------------------------------------------------------
 
-    st.markdown("#### 3. Model Artifact Integrity")
+    st.subheader("3. Model Artifact Integrity")
 
     artifact_names = [
         "afrihealth_model.joblib",
@@ -4142,7 +4139,7 @@ with st.expander(
     # 4. READ MODEL METADATA IF AVAILABLE
     # --------------------------------------------------------
 
-    st.markdown("#### 4. Model Metadata")
+    st.subheader("4. Model Metadata")
 
     metadata_path = Path("model_metadata.json")
     loaded_metadata = {}
@@ -4174,7 +4171,7 @@ with st.expander(
     # 5. EXTERNAL COHORT SUMMARY
     # --------------------------------------------------------
 
-    st.markdown("#### 5. External Validation Cohort Summary")
+    st.subheader("5. External Validation Cohort Summary")
 
     manifest_dataset_summary = {
         "available_in_current_session": False
@@ -4292,7 +4289,7 @@ with st.expander(
     # 6. REPRODUCIBILITY CHECKLIST
     # --------------------------------------------------------
 
-    st.markdown("#### 6. Research Reproducibility Checklist")
+    st.subheader("6. Research Reproducibility Checklist")
 
     checklist_items = [
         "Record the exact model artifact and its SHA-256 hash.",
@@ -4336,7 +4333,7 @@ with st.expander(
     # 7. KNOWN LIMITATIONS
     # --------------------------------------------------------
 
-    st.markdown("#### 7. Known Research Limitations")
+    st.subheader("7. Known Research Limitations")
 
     known_limitations = [
         (
@@ -4374,7 +4371,7 @@ with st.expander(
     # 8. BUILD DOWNLOADABLE RESEARCH MANIFEST
     # --------------------------------------------------------
 
-    st.markdown("#### 8. Download Research Manifest")
+    st.subheader("8. Download Research Manifest")
 
     research_manifest = {
         "manifest_schema_version": "1.0",
