@@ -103,13 +103,6 @@ EXPECTED_FEATURE_RANGES = {
 MODEL_NAME = "AfriHealth AI"
 APP_VERSION = "Build 06A / Research Validation"
 
-# Statistical evaluation configuration
-# These values are part of the reproducibility protocol.
-BOOTSTRAP_N = 1000
-BOOTSTRAP_SEED = 42
-BOOTSTRAP_CI_LEVEL = 0.95
-BOOTSTRAP_METHOD = "Class-stratified percentile bootstrap"
-
 
 # ============================================================
 # CUSTOM CSS
@@ -309,8 +302,8 @@ def bootstrap_metric_ci(
     y_pred,
     probabilities,
     metric_name,
-    n_bootstrap=BOOTSTRAP_N,
-    random_state=BOOTSTRAP_SEED,
+    n_bootstrap=1000,
+    random_state=42,
 ):
     """
     Class-stratified bootstrap confidence interval.
@@ -410,9 +403,8 @@ def bootstrap_metric_ci(
     if len(values) < 100:
         return np.nan, np.nan
 
-    alpha = 1.0 - BOOTSTRAP_CI_LEVEL
-    lower = np.percentile(values, 100.0 * (alpha / 2.0))
-    upper = np.percentile(values, 100.0 * (1.0 - alpha / 2.0))
+    lower = np.percentile(values, 2.5)
+    upper = np.percentile(values, 97.5)
 
     return float(lower), float(upper)
 
@@ -421,7 +413,7 @@ def create_bootstrap_results(
     y_true,
     y_pred,
     probabilities,
-    n_bootstrap=BOOTSTRAP_N,
+    n_bootstrap=1000,
 ):
     """
     Generate a complete metric table containing estimate,
@@ -444,7 +436,6 @@ def create_bootstrap_results(
             probabilities,
             metric_name,
             n_bootstrap=n_bootstrap,
-            random_state=BOOTSTRAP_SEED,
         )
 
         rows.append(
@@ -739,15 +730,6 @@ def create_pdf_report(
         Paragraph(
             "2. Performance Results",
             heading_style,
-        )
-    )
-
-    story.append(
-        Paragraph(
-            f"95% confidence intervals were calculated using {BOOTSTRAP_N:,} "
-            f"class-stratified bootstrap resamples with random seed "
-            f"{BOOTSTRAP_SEED} and percentile limits.",
-            body_style,
         )
     )
 
@@ -2465,14 +2447,13 @@ if uploaded_file is not None:
 
                         st.caption(
                             "Intervals are generated using 1,000 "
-                            "class-stratified bootstrap resamples with seed 42 "
-                            "and percentile confidence limits. They quantify "
-                            "sampling uncertainty within this external evaluation "
-                            "cohort."
+                            "class-stratified bootstrap resamples. "
+                            "They quantify sampling uncertainty within "
+                            "this external evaluation cohort."
                         )
 
                         with st.spinner(
-                            "Calculating 1,000 class-stratified bootstrap resamples (seed 42)..."
+                            "Calculating 1,000 class-stratified bootstrap resamples..."
                         ):
 
                             external_metrics_ci = (
@@ -2480,7 +2461,7 @@ if uploaded_file is not None:
                                     y_external,
                                     external_predictions,
                                     external_probabilities,
-                                    n_bootstrap=BOOTSTRAP_N,
+                                    n_bootstrap=1000,
                                 )
                             )
 
@@ -2517,13 +2498,6 @@ if uploaded_file is not None:
                                 "95% CI",
                             ]
                         ]
-
-                        st.caption(
-                            f"CI method: {BOOTSTRAP_METHOD}; "
-                            f"resamples: {BOOTSTRAP_N:,}; "
-                            f"seed: {BOOTSTRAP_SEED}; "
-                            f"confidence level: {BOOTSTRAP_CI_LEVEL:.0%}."
-                        )
 
                         st.dataframe(
                             ci_display,
@@ -2629,8 +2603,8 @@ if uploaded_file is not None:
                             together with the calibration curve rather than
                             from the Brier score alone.
 
-                            These results describe the observed performance on this particular
-                            external cohort. They do
+                            These results indicate promising performance
+                            on this particular external cohort. They do
                             not establish clinical validity, clinical
                             safety, or generalisability to Nigerian
                             populations.
@@ -2650,7 +2624,7 @@ if uploaded_file is not None:
                             "The current model has not been specifically trained or clinically validated on a Nigerian population.",
                             "Differences in patient demographics, measurement practices, disease prevalence and feature distributions may affect generalisation.",
                             "The external dataset contains constant features where applicable. Such features provide no variation for assessing external robustness.",
-                            "Confidence intervals describe sampling uncertainty in this evaluated cohort and do not establish population-level clinical validity.",
+                            "Confidence intervals describe sampling uncertainty in this cohort and do not establish population-level clinical validity.",
                             "The selected classification threshold may not be optimal for a clinical screening or diagnostic use case.",
                             "The model's predicted probabilities should not be interpreted as clinically calibrated individual risk.",
                             "Prospective validation and appropriate clinical governance would be required before clinical deployment.",
@@ -2685,38 +2659,6 @@ if uploaded_file is not None:
                             file_name=(
                                 "afrihealth_external_validation_metrics.csv"
                             ),
-                            mime="text/csv",
-                        )
-
-                        ci_metadata = pd.DataFrame(
-                            [
-                                {
-                                    "Parameter": "CI method",
-                                    "Value": BOOTSTRAP_METHOD,
-                                },
-                                {
-                                    "Parameter": "Bootstrap resamples",
-                                    "Value": BOOTSTRAP_N,
-                                },
-                                {
-                                    "Parameter": "Random seed",
-                                    "Value": BOOTSTRAP_SEED,
-                                },
-                                {
-                                    "Parameter": "Confidence level",
-                                    "Value": BOOTSTRAP_CI_LEVEL,
-                                },
-                                {
-                                    "Parameter": "Percentile limits",
-                                    "Value": "2.5%, 97.5%",
-                                },
-                            ]
-                        )
-
-                        st.download_button(
-                            label="Download CI Configuration CSV",
-                            data=ci_metadata.to_csv(index=False).encode("utf-8"),
-                            file_name="afrihealth_external_validation_ci_configuration.csv",
                             mime="text/csv",
                         )
 
@@ -4042,19 +3984,6 @@ with st.expander(
         "external_validation_cohort": "Hungarian cohort",
         "classification_threshold": 0.50,
         "threshold_analysis": "Exploratory thresholds from 0.10 to 0.90",
-        "bootstrap_confidence_intervals": {
-            "method": BOOTSTRAP_METHOD,
-            "resamples": BOOTSTRAP_N,
-            "random_seed": BOOTSTRAP_SEED,
-            "confidence_level": BOOTSTRAP_CI_LEVEL,
-            "percentile_limits": [2.5, 97.5],
-            "class_stratified": True,
-            "note": (
-                "Previously exported confidence intervals generated with a "
-                "different number of resamples must be regenerated before "
-                "being used in the manuscript."
-            ),
-        },
         "age_subgroup_cutoff": 55,
         "age_subgroups": ["Under 55", "55+"],
         "sex_encoding_assumption": {
@@ -4085,14 +4014,22 @@ with st.expander(
 
     protocol["expected_features"] = expected_features
 
-    st.json(protocol)
+    protocol_display = pd.DataFrame(
+        [
+            {
+                "Setting": key,
+                "Value": json.dumps(value, ensure_ascii=False, default=str)
+                if isinstance(value, (dict, list, tuple))
+                else str(value),
+            }
+            for key, value in protocol.items()
+        ]
+    )
 
-    st.info(
-        "Locked CI protocol: 1,000 class-stratified bootstrap resamples, "
-        "seed 42, 95% percentile confidence intervals. The app computes "
-        "these intervals dynamically from the current external predictions. "
-        "Do not use an older 2,000-resample export in the manuscript without "
-        "regenerating it under this protocol."
+    st.dataframe(
+        protocol_display,
+        use_container_width=True,
+        hide_index=True,
     )
 
     # --------------------------------------------------------
@@ -4233,7 +4170,23 @@ with st.expander(
             with metadata_path.open("r", encoding="utf-8") as metadata_file:
                 loaded_metadata = json.load(metadata_file)
 
-            st.json(loaded_metadata)
+            metadata_display = pd.DataFrame(
+                [
+                    {
+                        "Metadata field": key,
+                        "Value": json.dumps(value, ensure_ascii=False, default=str)
+                        if isinstance(value, (dict, list, tuple))
+                        else str(value),
+                    }
+                    for key, value in loaded_metadata.items()
+                ]
+            )
+
+            st.dataframe(
+                metadata_display,
+                use_container_width=True,
+                hide_index=True,
+            )
 
         except Exception as metadata_error:
 
@@ -4381,8 +4334,6 @@ with st.expander(
         "Preserve the external cohort source, cleaning rules, and inclusion criteria.",
         "Keep external validation separate from model fitting and threshold selection.",
         "Record the classification threshold before interpreting the metrics.",
-        "Record bootstrap resamples, random seed, confidence level, and CI method.",
-        "Regenerate any prior confidence-interval exports if their bootstrap configuration differs from the locked protocol.",
         "Document missing data, duplicates, class imbalance, and constant features.",
         "Report subgroup sizes and avoid unsupported fairness claims.",
         "Retain the evaluation results, code version, and limitations."
@@ -4521,3 +4472,4 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
